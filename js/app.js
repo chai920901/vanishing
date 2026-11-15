@@ -35,14 +35,29 @@
   const mapFeatures = window.SITE_FOOTPRINTS.features.map((f) => {
     const b = byOsm[f.properties.osm];
     return {
-      type: 'Feature', geometry: f.geometry,
-      properties: {
-        featured: !!b,
-        ratio: b ? b.info.hp / b.info.max : 1,
-        h: (b && b.height) || (f.properties.levels || 4) * 3.5,
-      },
+      id: b ? b.id : 'osm' + f.properties.osm,
+      featured: !!b,
+      name: b ? t(b.name) : '',
+      en: b && b.name.en ? b.name.en : '',
+      h: (b && b.height) || (f.properties.levels || 4) * 3.5,
+      paper: b ? b.paper : null,
+      ring: f.geometry.coordinates[0],
     };
   });
+
+  // ---------- 存檔：走過的路與走近過的建築，只存在這支手機上 ----------
+  const SAVE_KEY = 'vanishing.' + site.id + '.v1';
+  const VISIT_RADIUS = 45;   // 走到多近算「去過」（公尺）
+  const TRACK_STEP = 6;      // 每走幾公尺縫一針
+  const TRACK_MAX = 3000;
+  let save = { version: 1, visited: {}, track: [] };
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (raw && raw.version === 1) save = { version: 1, visited: raw.visited || {}, track: raw.track || [] };
+  } catch (e) { /* 讀不到就用空存檔 */ }
+  function persist() {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 存不了也照常運作 */ }
+  }
 
   const level = (r) => (r < 0.25 ? 'low' : r < 0.5 ? 'mid' : '');
 
@@ -132,6 +147,7 @@
 
     const act = (k) => {
       const step = 4, turn = 8;
+      if ('wasd'.indexOf(k) >= 0) state.simTarget = null;
       if (k === 'w') state.pos = geo.move(state.pos, state.heading, step);
       if (k === 's') state.pos = geo.move(state.pos, state.heading + 180, step);
       if (k === 'a') state.pos = geo.move(state.pos, state.heading - 90, step);
@@ -141,12 +157,9 @@
     };
     window.addEventListener('keydown', (e) => act(e.key.toLowerCase()));
     $('simpanel').addEventListener('click', (e) => { if (e.target.dataset.k) act(e.target.dataset.k); });
-    // 點小地圖直接移動到那個位置
-    $('mini').addEventListener('click', (e) => {
-      const r = $('map').getBoundingClientRect();
-      const p = App.minimap.unproject(e.clientX - r.left, e.clientY - r.top);
-      if (p) state.pos = p;
-    });
+    // 地圖展開時，點地圖直接移動到那個位置
+    // 地圖展開時點一下書頁，模擬的使用者會走過去
+    App.minimap.onTap = (p) => { state.simTarget = p; };
     App.simSet = (lat, lng, h) => { state.pos = { lat, lng }; if (h != null) state.heading = h; };
   }
 
@@ -174,12 +187,25 @@
   }
   buildings.forEach((b) => { bars[b.id] = makeBar(b); });
 
-  function frame() {
+  const SIM_SPEED = 9;       // 模擬定位點地圖移動時的速度（公尺／秒）
+  let lastFrame = 0;
+  function frame(ts) {
     requestAnimationFrame(frame);
+    const dt = lastFrame ? Math.min(0.25, (ts - lastFrame) / 1000) : 0.016;
+    lastFrame = ts;
+    if (state.simTarget && state.pos) {
+      const d = geo.dist(state.pos, state.simTarget);
+      if (d < 0.6) state.simTarget = null;
+      else {
+        state.heading = geo.bearing(state.pos, state.simTarget);
+        state.pos = geo.move(state.pos, state.heading, Math.min(d, SIM_SPEED * dt));
+      }
+    }
     if (!state.pos || !state.inField) return;
 
     state.smooth = (state.smooth + geo.diff(state.heading, state.smooth) * 0.18 + 360) % 360;
-    App.minimap.update(state.pos, state.smooth);
+    App.minimap.update(state.pos, state.smooth, dt);
+    walk();
 
     const W = hud.clientWidth, H = hud.clientHeight;
     const seen = buildings
@@ -212,12 +238,44 @@
     $('empty').hidden = seen.length > 0;
   }
 
+  // 記錄走過的路，並檢查有沒有走近新的建築
+  function walk() {
+    const last = save.track[save.track.length - 1];
+    const here = [+state.pos.lat.toFixed(6), +state.pos.lng.toFixed(6)];
+    if (!last || geo.dist({ lat: last[0], lng: last[1] }, state.pos) >= TRACK_STEP) {
+      save.track.push(here);
+      if (save.track.length > TRACK_MAX) save.track.shift();
+      App.minimap.setTrack(save.track);
+      persist();
+    }
+    buildings.forEach((b) => {
+      if (!save.visited[b.id] && geo.dist(state.pos, b.center) <= VISIT_RADIUS) {
+        save.visited[b.id] = true;
+        App.minimap.setVisited(save.visited, b.id);
+        persist();
+      }
+    });
+  }
+
+  // 縮圖點一下展開成立體書
+  $('mini').addEventListener('click', () => {
+    if ($('mini').classList.contains('open')) return;
+    $('mini').classList.add('open');
+    App.minimap.setOpen(true);
+  });
+  $('map-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    $('mini').classList.remove('open');
+    App.minimap.setOpen(false);
+  });
+  $('map-site').textContent = t(site.name);
+
   function run() {
     state.running = true;
     const avg = buildings.reduce((s, b) => s + b.info.hp, 0) / buildings.length;
     $('avg-num').textContent = Math.round(avg) + '%';
-    App.minimap.init($('map'), mapFeatures, state.pos);
-    frame();
+    App.minimap.init($('map'), mapFeatures, site, save, window.SITE_TERRAIN);
+    requestAnimationFrame(frame);
   }
 
   // ---------- 傷害紀錄 ----------
@@ -244,7 +302,7 @@
       const meta = document.createElement('div');
       meta.className = 'ev-meta';
       meta.innerHTML = '<span></span><span class="tag"></span>' +
-        (e.inherited ? '<span>校區</span>' : '') +
+        (e.inherited ? '<span class="scope">校區</span>' : '') +
         (e.pending ? '<span>預告' + (e.uncertain ? '・未確認' : '') + '</span>' : '');
       meta.children[0].textContent = date;
       meta.children[1].textContent = t(e.typeLabel);
