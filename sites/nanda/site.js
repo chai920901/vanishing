@@ -12,7 +12,7 @@ window.SITE = {
   radius: 260,
 
   // 立體書地圖：書頁四周留白（上、右、下、左，公尺）。下方多留，是為了把校區南邊的汀甫圳放進來。
-  page: { padding: [34, 30, 120, 30] },
+  page: { padding: [34, 30, 120, 30], people: 26 },   // people：地圖上裝飾用的小人數量
 
   // 地標：位置取自校方地圖導覽系統的導航點，可能與實際位置有落差，需現場校正
   landmarks: [
@@ -75,7 +75,7 @@ window.SITE = {
   // 有資料的建築。osm 對應 footprints.js 裡的外框。
   // built：興建或啟用年份，查不到寫 null。
   buildings: [
-    { id: 'gate', osm: 297889614, height: 9, paper: { color: '#b9694a', roof: '#24323f', windows: 'none' },
+    { id: 'gate', osm: 297889614, height: 9, paper: { color: '#ee8f85', windows: 'none' },
       name: { zh: '校門', en: 'Main Gate' }, built: null,
       events: [
         { date: '2016-11-01', type: 'name', severity: 3,
@@ -84,7 +84,7 @@ window.SITE = {
           source: 'https://archives.lib.nthu.edu.tw/history/timeline/timeline03.html' },
       ] },
 
-    { id: 'library', osm: 291042237, paper: { color: '#3f8f8a', roof: '#24323f', windows: 'tall' },
+    { id: 'library', osm: 291042237, paper: { color: '#8f2636', windows: 'tall', top: 'saw' },
       name: { zh: '圖書館', en: 'Library' }, built: null,
       events: [
         { date: '2025-06-11', type: 'closure', severity: 2,
@@ -101,32 +101,32 @@ window.SITE = {
           source: 'https://www.chinatimes.com/realtimenews/20261103003801-260421' },
       ] },
 
-    { id: 'memorial', osm: 1165031198, paper: { color: '#c9744f', roof: '#5b4a44', windows: 'arch' },
+    { id: 'memorial', osm: 1165031198, paper: { color: '#f6b9b0', windows: 'arch', top: 'gable', roofTop: '#ee8f85' },
       name: { zh: '竹師會館', en: 'Zhushi Memorial Hall' }, built: null,
       note: { zh: '2019 年由閒置教室整建啟用，保存竹師校史', en: 'Converted from disused classrooms in 2019 to keep the school history' },
       events: [] },
 
-    { id: 'extension', osm: 297888032, paper: { color: '#e2a63b', roof: '#7a4a32', windows: 'grid' },
+    { id: 'extension', osm: 297888032, paper: { color: '#f4dc8a', base: '#e88d52', windows: 'grid' },
       name: { zh: '推廣教育大樓（九大）', en: 'Extension Education Bldg.' }, built: null,
       note: { zh: '竹松社區大學使用中', en: 'In use by Zhusong Community College' },
       events: [] },
 
-    { id: 'activity2', osm: 297888461, paper: { color: '#5b7fa6', roof: '#24323f', windows: 'band' },
+    { id: 'activity2', osm: 297888461, paper: { color: '#c0afdc', windows: 'band', top: 'glass' },
       name: { zh: '第二活動中心（二活）', en: 'Student Activity Center II' }, built: null,
       note: { zh: '三樓為藝術學院學士班與科技藝術研究所空間', en: '3F houses College of Arts programs' },
       events: [] },
 
-    { id: 'artdesign', osm: 297888361, paper: { color: '#d9533b', roof: '#24323f', windows: 'band' },
+    { id: 'artdesign', osm: 297888361, paper: { color: '#ee8f85', windows: 'band', top: 'saw' },
       name: { zh: '藝設系館', en: 'Arts & Design Bldg.' }, built: null,
       note: { zh: '仍在使用，等待遷往校本部', en: 'Still in use, awaiting relocation' },
       events: [] },
 
-    { id: 'music', osm: 297889691, paper: { color: '#6fa37a', roof: '#3f5f52', windows: 'arch' },
+    { id: 'music', osm: 297889691, paper: { color: '#b3c7ae', base: '#e88d52', windows: 'arch' },
       name: { zh: '音樂系館', en: 'Music Bldg.' }, built: null,
       note: { zh: '仍在使用，等待遷往校本部', en: 'Still in use, awaiting relocation' },
       events: [] },
 
-    { id: 'yinhong', osm: 1165031189, paper: { color: '#8a6a4f', roof: '#24323f', trim: '#5b4a44', windows: 'balcony' },
+    { id: 'yinhong', osm: 1165031189, paper: { color: '#f6b9b0', trim: '#ee8f85', windows: 'balcony' },
       name: { zh: '飲虹樓', en: 'Yinhong Hall' }, built: null,
       events: [
         { date: '2018-02-01', type: 'structure', severity: 3,
@@ -144,7 +144,7 @@ window.SITE = {
       ] },
 
     // 以下三棟依校方「南大校區平面圖」補上
-    { id: 'appsci', osm: 291042241, paper: { color: '#7d6aa0', roof: '#24323f', windows: 'grid' },
+    { id: 'appsci', osm: 291042241, paper: { color: '#c0afdc', windows: 'grid', top: 'garden' },
       name: { zh: '應用科學大樓', en: 'Applied Science Bldg.' }, built: null,
       note: { zh: '原為應用科學系、中國語文學系、環境與文化資源學系使用', en: 'Formerly home to three departments' },
       events: [
@@ -158,7 +158,7 @@ window.SITE = {
           source: 'https://www.nthu.edu.tw/hotNews/content/1233' },
       ] },
 
-    { id: 'gym', osm: 291042231, paper: { color: '#4f7f9a', roof: '#3a4a58', windows: 'band' },
+    { id: 'gym', osm: 291042231, paper: { color: '#a9b2b1', windows: 'band', top: 'gable', roofTop: '#fbf8f1' },
       name: { zh: '體育館', en: 'Gymnasium' }, built: null,
       events: [
         { date: null, type: 'name', severity: 1,
@@ -167,32 +167,32 @@ window.SITE = {
           source: 'https://dpe.site.nthu.edu.tw/' },
       ] },
 
-    { id: 'pehealth', osm: 297887802, paper: { color: '#c98f4f', roof: '#24323f', windows: 'tall' },
+    { id: 'pehealth', osm: 297887802, paper: { color: '#f4dc8a', windows: 'tall' },
       name: { zh: '體育健康教學大樓', en: 'PE & Health Bldg.' }, built: 2010,
       note: { zh: '作者現場回報：現為「陽光多元運動中心」，啟用時間與營運單位待確認', en: 'Author reports it now houses a multi-sport centre; opening date and operator to be confirmed' },
       events: [] },
 
-    { id: 'admin', osm: 291042232, paper: { color: '#a8574a', roof: '#24323f', windows: 'grid' },
+    { id: 'admin', osm: 291042232, paper: { color: '#b3c7ae', base: '#e88d52', windows: 'grid' },
       name: { zh: '行政大樓', en: 'Administration Bldg.' }, built: null,
       note: { zh: '2026 年 8 月起，一樓設有清華圖書館的臨時服務點，預計服務到 2027 年暑假', en: 'Hosts a temporary library service point since Aug 2026' },
       events: [] },
 
-    { id: 'teaching', osm: 291042234, paper: { color: '#5f8f6f', roof: '#3a4a58', windows: 'tall' },
+    { id: 'teaching', osm: 291042234, paper: { color: '#f6b9b0', base: '#ee8f85', windows: 'grid', top: 'garden' },
       name: { zh: '教學大樓', en: 'Teaching Bldg.' }, built: null,
       note: { zh: '竹師大事紀記載「教學（二）大樓」1969 年落成，是否為同一棟尚未確認', en: 'A 1969 completion is recorded for a "Teaching Bldg. II"; not confirmed to be this one' },
       events: [] },
 
-    { id: 'general', osm: 291042236, paper: { color: '#4f8f9a', roof: '#24323f', windows: 'band' },
+    { id: 'general', osm: 291042236, paper: { color: '#a9b2b1', windows: 'band', top: 'garden' },
       name: { zh: '綜合教學大樓', en: 'General Teaching Bldg.' }, built: 2011,
       note: { zh: '校區最新的一棟。依校方平面圖，現有永續學院、醫學資訊與精準醫療等學程、推廣教育中心，地下一樓是國際會議廳', en: 'The newest building; now hosts new programmes, the extension centre and an international conference hall' },
       events: [] },
 
-    { id: 'studentaffairs', osm: 291042244, paper: { color: '#b58a5a', roof: '#24323f', windows: 'grid' },
+    { id: 'studentaffairs', osm: 291042244, paper: { color: '#f4dc8a', windows: 'grid' },
       name: { zh: '學務處', en: 'Student Affairs' }, built: null,
       note: { zh: '校方平面圖標為學務處；開放地圖上的名稱是第一學生活動中心', en: 'Labelled Student Affairs on the campus map; Student Activity Center I on OpenStreetMap' },
       events: [] },
 
-    { id: 'mingfeng', osm: 291042243, paper: { color: '#c97b84', roof: '#24323f', trim: '#5b4a44', windows: 'balcony' },
+    { id: 'mingfeng', osm: 291042243, paper: { color: '#c0afdc', trim: '#f6b9b0', windows: 'balcony' },
       name: { zh: '鳴鳳樓', en: 'Mingfeng Hall' }, built: null,
       note: { zh: '女生宿舍' },
       events: [
@@ -202,7 +202,7 @@ window.SITE = {
           source: 'https://nthulemonnews.com/zhu-shi-jiao-yu-xue-yuan-ban-qian-zhi-hou-shang-xin-kong-jian-de-mo-he-yu-shi-ying/' },
       ] },
 
-    { id: 'chongshan', osm: 1165031185, paper: { color: '#b9856a', roof: '#24323f', trim: '#5b4a44', windows: 'balcony' },
+    { id: 'chongshan', osm: 1165031185, paper: { color: '#b3c7ae', trim: '#f6b9b0', windows: 'balcony' },
       name: { zh: '崇善樓', en: 'Chongshan Hall' }, built: null,
       note: { zh: '女生宿舍' },
       events: [
@@ -212,7 +212,7 @@ window.SITE = {
           source: 'https://nthulemonnews.com/zhu-shi-jiao-yu-xue-yuan-ban-qian-zhi-hou-shang-xin-kong-jian-de-mo-he-yu-shi-ying/' },
       ] },
 
-    { id: 'yingxi', osm: 1165031186, paper: { color: '#d1a05a', roof: '#24323f', trim: '#5b4a44', windows: 'balcony' },
+    { id: 'yingxi', osm: 1165031186, paper: { color: '#ee8f85', trim: '#f9d5cf', windows: 'balcony' },
       name: { zh: '迎曦軒', en: 'Yingxi Hall' }, built: null,
       note: { zh: '女生宿舍' },
       events: [
@@ -222,7 +222,7 @@ window.SITE = {
           source: 'https://nthulemonnews.com/zhu-shi-jiao-yu-xue-yuan-ban-qian-zhi-hou-shang-xin-kong-jian-de-mo-he-yu-shi-ying/' },
       ] },
 
-    { id: 'shude', osm: 297888533, paper: { color: '#6f8fa8', roof: '#24323f', trim: '#5b4a44', windows: 'balcony' },
+    { id: 'shude', osm: 297888533, paper: { color: '#f4dc8a', trim: '#fbf8f1', windows: 'balcony' },
       name: { zh: '樹德樓', en: 'Shude Hall' }, built: null,
       note: { zh: '男生宿舍；齋長任期排到 2027 年 1 月，仍在運作' },
       events: [
@@ -232,7 +232,7 @@ window.SITE = {
           source: 'https://nthulemonnews.com/zhu-shi-jiao-yu-xue-yuan-ban-qian-zhi-hou-shang-xin-kong-jian-de-mo-he-yu-shi-ying/' },
       ] },
 
-    { id: 'juyue', osm: 302104712, paper: { color: '#8f7fa8', roof: '#24323f', trim: '#5b4a44', windows: 'balcony' },
+    { id: 'juyue', osm: 302104712, paper: { color: '#a9b2b1', trim: '#f6b9b0', windows: 'balcony' },
       name: { zh: '掬月齋', en: 'Juyue Hall' }, built: null,
       note: { zh: '女生宿舍；齋長任期排到 2027 年 1 月，仍在運作' },
       events: [

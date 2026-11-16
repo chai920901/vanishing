@@ -1,12 +1,15 @@
 :root {
-  --table: #17324a;
-  --paper: #f4ead6;
-  --card: #fffaf0;
-  --ink: #24323f;
-  --soft: rgba(36, 50, 63, 0.62);
-  --coral: #d9533b;
-  --teal: #3f8f8a;
-  --mustard: #d99a2b;
+  --table: #bfcdb9;
+  --paper: #f3eddc;
+  --card: #fffdf6;
+  --ink: #3a3340;
+  --soft: rgba(58, 51, 64, 0.66);
+  --coral: #d5534a;
+  --brick: #8f2636;
+  --pink: #f6b9b0;
+  --teal: #5b8a76;
+  --mustard: #cf9a24;
+  --drop: rgba(58, 51, 64, 0.22);
   --mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --sans: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
 }
@@ -16,35 +19,29 @@ html, body { height: 100%; overflow: hidden; background: var(--table); color: va
 [hidden] { display: none !important; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 
-/* 桌面：深藍底加上細小的筆觸 */
+/* 桌面：鼠尾草綠，一道一道的斜條紋 */
 .screen, #simbg {
   background-color: var(--table);
-  background-image:
-    radial-gradient(rgba(255, 255, 255, 0.09) 1.2px, transparent 1.4px),
-    radial-gradient(rgba(255, 255, 255, 0.05) 1.2px, transparent 1.4px);
-  background-size: 46px 38px, 46px 38px;
-  background-position: 0 0, 23px 19px;
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0 16px, transparent 16px 32px);
 }
 
-/* ---------- 起始與場外畫面：一張立在桌上的紙 ---------- */
+/* ---------- 起始與場外畫面：一張描了細線的色紙 ---------- */
 .screen { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 28px; }
 .sheet {
   width: 100%; max-width: 360px; padding: 40px 28px 34px; background: var(--paper);
-  border: 1.5px solid var(--coral); outline: 5px solid var(--paper);
-  box-shadow: 9px 11px 0 rgba(0, 0, 0, 0.28);
-  background-image: radial-gradient(rgba(36, 50, 63, 0.07) 1px, transparent 1.2px); background-size: 6px 6px;
+  border: 1.5px solid var(--ink); box-shadow: 8px 9px 0 var(--pink), 8px 9px 0 1.5px var(--ink);
 }
-.eyebrow { font-family: var(--mono); letter-spacing: 0.12em; font-size: 11px; color: var(--coral); margin-bottom: 16px; }
-.title { font-size: clamp(52px, 17vw, 84px); font-weight: 900; letter-spacing: 0.06em; line-height: 1.1; color: var(--ink); }
-/* 縫線 */
-.thread { height: 3px; margin: 18px auto 0; width: 70%; background: repeating-linear-gradient(90deg, var(--coral) 0 12px, transparent 12px 19px); border-radius: 2px; }
+.eyebrow { font-family: var(--mono); letter-spacing: 0.12em; font-size: 11px; color: var(--brick); margin-bottom: 16px; }
+.title { font-size: clamp(52px, 17vw, 84px); font-weight: 900; letter-spacing: 0.06em; line-height: 1.1; color: var(--brick); }
+/* 一格一格的條紋，和地圖上的路一樣 */
+.thread { height: 10px; margin: 18px auto 0; width: 70%; border: 1.5px solid var(--ink); background: repeating-linear-gradient(90deg, var(--pink) 0 10px, var(--card) 10px 20px); }
 .lede { margin: 20px 0 30px; color: var(--soft); font-size: 15px; }
 .btn {
   font-weight: 700; font-size: 18px; letter-spacing: 0.4em; padding: 14px 40px 14px 48px;
-  background: var(--coral); color: var(--card); border: 2px solid var(--card);
-  box-shadow: 4px 5px 0 rgba(36, 50, 63, 0.3); transition: transform 0.08s, box-shadow 0.08s;
+  background: var(--brick); color: var(--card); border: 1.5px solid var(--ink);
+  box-shadow: 4px 5px 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s;
 }
-.btn:active { transform: translate(3px, 4px); box-shadow: 1px 1px 0 rgba(36, 50, 63, 0.3); }
+.btn:active { transform: translate(3px, 4px); box-shadow: 1px 1px 0 var(--ink); }
 .fine { margin-top: 28px; font-size: 12px; line-height: 1.8; color: var(--soft); }
 .fine.err { color: var(--coral); font-weight: 500; }
 
@@ -52,112 +49,102 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #stage { position: fixed; inset: 0; overflow: hidden; background: #000; }
 #cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 #simbg { position: absolute; inset: 0; display: none; }
-#simbg span { position: absolute; right: 12px; top: 12px; font: 11px var(--mono); color: rgba(255, 255, 255, 0.5); }
+#simbg span { position: absolute; right: 12px; top: 12px; font: 11px var(--mono); color: var(--soft); }
 .sim #simbg { display: block; }
 .sim #cam { display: none; }
 
-/* ---------- 血條：插在建築上的紙旗 ---------- */
+/* ---------- 血條：插在建築上的名牌 ---------- */
 #hud { position: absolute; inset: 0; }
 .bar {
   --c: var(--teal);
   position: absolute; left: 0; top: 0; width: 210px; text-align: left; color: var(--ink);
   transform-origin: 0 0; will-change: transform, opacity;
-  padding: 9px 11px 10px; background: var(--card); border: 1.5px solid var(--c); outline: 3px solid var(--card);
-  box-shadow: 5px 6px 0 rgba(0, 0, 0, 0.3);
+  padding: 9px 11px 10px; background: var(--card); border: 1.5px solid var(--ink);
+  box-shadow: 4px 5px 0 var(--drop);
 }
 .bar::after {              /* 旗桿 */
   content: ''; position: absolute; left: 50%; top: calc(100% + 3px); width: 3px; height: 26px; margin-left: -1.5px;
-  background: #c9a877; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.22);
+  background: var(--ink);
 }
 .bar.mid { --c: var(--mustard); }
 .bar.low { --c: var(--coral); }
 .bar-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .bar-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar-dist { font: 11px var(--mono); color: var(--soft); flex: none; }
-.track { height: 8px; margin: 7px 0 5px; background: rgba(36, 50, 63, 0.1); overflow: hidden; }
-/* 一針一針縫出來的血條 */
-.fill { height: 100%; background: repeating-linear-gradient(90deg, var(--c) 0 7px, transparent 7px 9px); }
+.track { height: 9px; margin: 7px 0 5px; background: var(--paper); border: 1px solid var(--ink); overflow: hidden; }
+/* 一格一格的血條 */
+.fill { height: 100%; background: repeating-linear-gradient(90deg, var(--c) 0 7px, transparent 7px 8px); }
 .bar-num { font: 500 22px/1 var(--mono); color: var(--c); }
 .bar-num small { font-size: 12px; color: var(--soft); }
-.bar-why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(36, 50, 63, 0.25); font-size: 11px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.bar-why b { font: 500 11px var(--mono); color: var(--coral); margin-right: 4px; }
+.bar-why { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(58, 51, 64, 0.2); font-size: 11px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bar-why b { font: 500 11px var(--mono); color: var(--brick); margin-right: 4px; }
 
 #empty {
   position: absolute; left: 50%; top: 54%; transform: translateX(-50%); white-space: nowrap;
-  padding: 7px 14px; background: var(--card); border: 1.5px dashed var(--soft); font-size: 13px; color: var(--soft);
+  padding: 7px 14px; background: var(--card); border: 1.5px solid var(--ink); font-size: 13px; color: var(--soft);
 }
 
-/* ---------- 紙雕地圖 ---------- */
+/* ---------- 等角插畫地圖 ---------- */
 #mini {
   position: absolute; z-index: 20; left: 12px; top: calc(12px + env(safe-area-inset-top)); width: 148px; height: 148px;
-  overflow: hidden; background: var(--table); border: 2px solid var(--card); box-shadow: 5px 6px 0 rgba(0, 0, 0, 0.3); cursor: pointer;
+  overflow: hidden; background: var(--table); border: 1.5px solid var(--ink); box-shadow: 4px 5px 0 var(--drop); cursor: pointer;
 }
 #map { display: block; width: 100%; height: 100%; touch-action: none; }
 #map-tab, #map-close, #map-legend { display: none; }
 #mini.open { inset: 0; width: auto; height: auto; border: 0; box-shadow: none; z-index: 40; cursor: default; }
 #mini.open #map-tab {
   display: flex; align-items: baseline; gap: 8px; position: absolute; left: 0; top: calc(14px + env(safe-area-inset-top));
-  padding: 7px 14px 7px 12px; background: var(--card); border: 1.5px solid var(--coral); border-left: 0; box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.25);
+  padding: 7px 14px 7px 12px; background: var(--card); border: 1.5px solid var(--ink); border-left: 0; box-shadow: 4px 5px 0 var(--drop);
 }
 #map-tab b { font-size: 15px; font-weight: 900; }
-#map-tab span { font: 10px var(--mono); color: var(--coral); letter-spacing: 0.08em; }
+#map-tab span { font: 10px var(--mono); color: var(--brick); letter-spacing: 0.08em; }
 #mini.open #map-close {
   display: block; position: absolute; right: 12px; top: calc(12px + env(safe-area-inset-top)); width: 38px; height: 38px;
-  background: var(--coral); color: var(--card); border: 2px solid var(--card); font-size: 16px; box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.25);
+  background: var(--brick); color: var(--card); border: 1.5px solid var(--ink); font-size: 16px; box-shadow: 4px 5px 0 var(--drop);
 }
 #mini.open #map-legend {
   display: block; position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap;
   bottom: calc(22px + env(safe-area-inset-bottom)); padding: 6px 12px; background: var(--card); border: 1.5px solid var(--ink);
-  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.25); font-size: 11px; color: var(--ink); pointer-events: none;
+  box-shadow: 3px 4px 0 var(--drop); font-size: 11px; color: var(--ink); pointer-events: none;
 }
-
-/* 地圖上的字 */
-.m-name { font-size: 9.5px; font-weight: 700; fill: #24323f; }
-.m-en { font: 500 4.6px 'DM Mono', monospace; fill: #d9533b; letter-spacing: 0.06em; }
-.m-stamp { font-size: 8px; font-weight: 700; fill: #d9533b; letter-spacing: 0.1em; }
-.m-none { font-size: 5.5px; fill: rgba(36, 50, 63, 0.5); }
-.m-compass { font: 500 10px 'DM Mono', monospace; fill: #d9533b; }
-/* 建築從紙面立起來 */
-.m-b.pop { transform-box: fill-box; transform-origin: 50% 100%; animation: popup 0.7s cubic-bezier(0.2, 1.5, 0.4, 1); }
-@keyframes popup { from { transform: scaleY(0.05); opacity: 0.2; } }
 
 #avg {
   position: absolute; z-index: 20; left: 12px; top: calc(172px + env(safe-area-inset-top)); width: 148px;
   display: flex; justify-content: space-between; align-items: baseline; padding: 4px 9px;
-  background: var(--card); border: 1.5px solid var(--teal); box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.3); font-size: 11px; color: var(--soft);
+  background: var(--card); border: 1.5px solid var(--ink); box-shadow: 4px 5px 0 var(--drop); font-size: 11px; color: var(--soft);
 }
 #avg b { font: 500 16px var(--mono); color: var(--teal); }
-#credit { position: absolute; left: 10px; bottom: calc(6px + env(safe-area-inset-bottom)); font: 9px var(--mono); color: rgba(255, 255, 255, 0.4); z-index: 41; }
+#credit { position: absolute; left: 10px; bottom: calc(6px + env(safe-area-inset-bottom)); font: 9px var(--mono); color: rgba(255, 255, 255, 0.85); text-shadow: 0 0 3px rgba(0, 0, 0, 0.7); z-index: 41; }
 
 /* ---------- 模擬定位面板 ---------- */
 #simpanel { position: absolute; z-index: 45; right: 12px; bottom: 44px; display: grid; grid-template-columns: repeat(3, 40px); gap: 5px; }
-#simpanel button { height: 40px; background: var(--card); border: 1.5px solid var(--ink); font-size: 13px; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3); }
+#simpanel button { height: 40px; background: var(--card); border: 1.5px solid var(--ink); font-size: 13px; box-shadow: 3px 3px 0 var(--drop); }
 
-/* ---------- 傷害紀錄：一張橫線紙 ---------- */
+/* ---------- 傷害紀錄 ---------- */
 #log {
   position: absolute; z-index: 50; left: 0; right: 0; bottom: 0; max-height: 80%; overflow-y: auto;
   padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); background: var(--paper);
-  border-top: 2px solid var(--coral); box-shadow: 0 -8px 0 rgba(0, 0, 0, 0.22); animation: rise 0.25s ease-out;
+  border-top: 1.5px solid var(--ink); box-shadow: 0 -8px 0 var(--pink), 0 -9.5px 0 var(--ink); animation: rise 0.25s ease-out;
 }
 @keyframes rise { from { transform: translateY(40px); opacity: 0; } }
 .log-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .log-head h2 { font-size: 21px; font-weight: 900; }
 #log-meta { margin-top: 4px; font-size: 12px; color: var(--soft); line-height: 1.6; }
-#log-close { width: 34px; height: 34px; flex: none; background: var(--coral); color: var(--card); border: 2px solid var(--card); box-shadow: 3px 3px 0 rgba(36, 50, 63, 0.25); }
+#log-close { width: 34px; height: 34px; flex: none; background: var(--brick); color: var(--card); border: 1.5px solid var(--ink); box-shadow: 3px 3px 0 var(--drop); }
 .log-hp { --c: var(--teal); display: flex; align-items: center; gap: 12px; margin: 16px 0 6px; }
 .log-hp.mid { --c: var(--mustard); }
 .log-hp.low { --c: var(--coral); }
 .log-hp .track { flex: 1; margin: 0; height: 11px; }
 .log-hp b { font: 500 24px var(--mono); color: var(--c); }
 #log-list { list-style: none; margin-top: 10px; }
-#log-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 0; border-top: 1px dashed rgba(36, 50, 63, 0.28); }
+#log-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 0; border-top: 1px solid rgba(58, 51, 64, 0.2); }
 .ev-meta { font: 11px var(--mono); color: var(--soft); grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .ev-meta .tag { color: var(--teal); border: 1px solid var(--teal); padding: 0 5px; font-family: var(--sans); }
 .ev-meta .scope { border: 1px solid var(--soft); padding: 0 5px; font-family: var(--sans); }
 .ev-title { font-size: 14px; font-weight: 500; line-height: 1.5; }
 .ev-by { font-size: 12px; color: var(--soft); margin-top: 2px; }
-.ev-by a { color: var(--coral); margin-left: 8px; }
+.ev-by a { color: var(--brick); margin-left: 8px; }
 .ev-dmg { font: 500 21px var(--mono); color: var(--coral); align-self: center; grid-row: 2 / 4; grid-column: 2; }
 li.pending { opacity: 0.5; }
 li.pending .ev-dmg { color: var(--soft); }
-.log-foot { margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(36, 50, 63, 0.28); font-size: 11px; color: var(--soft); }
+.log-foot { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(58, 51, 64, 0.2); font-size: 11px; color: var(--soft); }

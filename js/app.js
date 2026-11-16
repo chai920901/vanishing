@@ -51,6 +51,12 @@
   const TRACK_STEP = 6;      // 每走幾公尺縫一針
   const TRACK_MAX = 3000;
   let save = { version: 1, visited: {}, track: [] };
+  // 測試用：網址加上 ?reset=1 會清掉這個場域的存檔。清完就把參數從網址拿掉，免得之後重新整理又清一次
+  if (params.has('reset')) {
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 清不掉就照舊 */ }
+    params.delete('reset');
+    try { history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash); } catch (e) { /* 改不了網址不影響使用 */ }
+  }
   try {
     const raw = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (raw && raw.version === 1) save = { version: 1, visited: raw.visited || {}, track: raw.track || [] };

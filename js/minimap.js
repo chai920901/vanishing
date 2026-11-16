@@ -1,20 +1,22 @@
-// 紙雕立體書地圖，用 Three.js 繪製成真正的 3D 場景。圖案由 paper.js 提供。
+// 等角插畫地圖，用 Three.js 繪製成 3D 場景：平塗色塊、深色細線、平行投影。圖案由 paper.js 提供。
 // 座標：場域先轉到「建築的邊與書頁平行」的方向，再以書頁中心為原點。X 向右，Y 向上，Z 朝向讀者。
-// 書分成左右兩半，以書脊（X = 0）為軸。打開時右半邊從蓋在左半邊上翻開，書頁上的紙片再依序立起來。
+// 書分成左右兩半，以書脊（X = 0）為軸。打開時右半邊從蓋在左半邊上翻開，書頁上的東西再依序立起來。
 (function () {
   const P = App.paper, C = P.C;
-  const TILT = -0.06;                                                           // 紙片稍微往後靠
+  const AZ0 = Math.PI / 4, EL0 = 0.62;                                          // 預設視角：斜 45 度、俯角約 35 度
+  const ZOOM = Math.tan((17 * Math.PI) / 180);                                  // view.dist 乘上它就是畫面的半高（公尺）
   const FOLD_AT = 0.3, FOLD_FOR = 1.15, POP_AT = 1.25, POP_SPREAD = 1.0, POP_FOR = 0.6;   // 打開動畫的時間（秒）
   const FOLLOW = 2.4;                                                           // 小人跟隨定位的鬆緊：越大跟得越緊
+  const FONT = '"Noto Sans TC", "PingFang TC", sans-serif';
 
-  let T, renderer, scene, camera, canvas, site, origin, cosLat, COS = 1, SIN = 0;
+  let T, renderer, scene, camera, canvas, site, origin, cosLat, COS = 1, SIN = 0, aspect = 1, inkLine;
   let page, staticCanvas, pageCanvas, pageTex, feats = [], land;
   let track = [], visited = {};
-  let left, right, pops = [], signs = [], sheets = {}, anims = [];
+  let left, right, pops = [], signs = [], turning = [], sheets = {}, anims = [];
   let player, playerPop, poses, base, facing = 1, stepPhase = 0;
   const me = { x: 0, z: 0, vx: 0, vz: 0, ready: false };                        // 小人實際顯示的位置與速度
   let isOpen = false, mode = 'me', fitDist = 400, intro = null, zoomTo = null;
-  const view = { az: 0, el: 0.82, dist: 150, tx: 0, tz: 0 };
+  const view = { az: AZ0, el: EL0, dist: 150, tx: 0, tz: 0 };
 
   // ---------- 座標 ----------
   const toM = (p) => ({ x: (p.lng - origin.lng) * 111320 * cosLat, y: (p.lat - origin.lat) * 110540 });
@@ -64,21 +66,79 @@
   }
   const onPage = (p, m) => Math.abs(p.x) < page.w / 2 - m && Math.abs(p.z) < page.d / 2 - m;
 
-  // ---------- 貼圖與紙片 ----------
+  // 外框裡面放得下的最大長方形（邊與書頁平行），屋頂上的東西放在這裡。放不下時回傳 null
+  function innerRect(ring) {
+    const xs = ring.map((p) => p.x), zs = ring.map((p) => p.z);
+    const x0 = Math.min(...xs), z0 = Math.min(...zs), bw = Math.max(...xs) - x0, bd = Math.max(...zs) - z0;
+    const ok = (r) => {
+      const nx = Math.max(2, Math.ceil((r.x1 - r.x0) / 2.5)), nz = Math.max(2, Math.ceil((r.z1 - r.z0) / 2.5));
+      for (let i = 0; i <= nx; i++) {
+        const x = r.x0 + ((r.x1 - r.x0) * i) / nx;
+        if (!inside({ x, z: r.z0 }, ring) || !inside({ x, z: r.z1 }, ring)) return false;
+      }
+      for (let i = 0; i <= nz; i++) {
+        const z = r.z0 + ((r.z1 - r.z0) * i) / nz;
+        if (!inside({ x: r.x0, z }, ring) || !inside({ x: r.x1, z }, ring)) return false;
+      }
+      return true;
+    };
+    let best = null, area = 0;
+    for (let gx = 1; gx <= 5; gx++) for (let gz = 1; gz <= 5; gz++) {
+      const c = { x: x0 + (bw * gx) / 6, z: z0 + (bd * gz) / 6 };
+      if (!inside(c, ring)) continue;
+      let r = null;
+      for (let s = 0.04; s <= 0.5; s += 0.02) {                                   // 先等比例放大
+        const t = { x0: c.x - bw * s, x1: c.x + bw * s, z0: c.z - bd * s, z1: c.z + bd * s };
+        if (!ok(t)) break;
+        r = t;
+      }
+      if (!r) continue;
+      [['x0', -1], ['x1', 1], ['z0', -1], ['z1', 1]].forEach((side) => {         // 再往四邊各自延伸
+        for (let i = 0; i < 60; i++) {
+          const t = Object.assign({}, r); t[side[0]] += side[1];
+          if (!ok(t)) break;
+          r = t;
+        }
+      });
+      const a = (r.x1 - r.x0) * (r.z1 - r.z0);
+      if (a > area) { area = a; best = r; }
+    }
+    if (!best) return null;
+    best = { x0: best.x0 + 1.6, x1: best.x1 - 1.6, z0: best.z0 + 1.6, z1: best.z1 - 1.6 };
+    return Math.min(best.x1 - best.x0, best.z1 - best.z0) >= 6 ? best : null;
+  }
+
+  // ---------- 貼圖、材質與零件 ----------
   function texture(c) {
     const t = new T.CanvasTexture(c);
     t.encoding = T.sRGBEncoding;
     t.anisotropy = 4;
     return t;
   }
+  // 平塗的材質。面往後退一點，讓描邊的線不會被吃掉
+  const flatMat = (color) => new T.MeshLambertMaterial({ color: new T.Color(color).convertSRGBToLinear(), polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  // 一塊有描邊的立體零件
+  function piece(geo, mats) {
+    const g = new T.Group(), m = new T.Mesh(geo, mats);
+    m.castShadow = true; m.receiveShadow = true; g.add(m);
+    g.add(new T.LineSegments(new T.EdgesGeometry(geo, 30), inkLine));
+    return g;
+  }
+  // 把一個側面輪廓（x 是水平、y 是高度）拉長成柱體。alongZ 為 false：輪廓沿 X、往 +Z 拉；為 true：輪廓沿 Z、往 +X 拉
+  function prism(pts, depth, alongZ, x, y, z, mats) {
+    const shape = new T.Shape();
+    pts.forEach((p, i) => (i ? shape.lineTo(p[0], p[1]) : shape.moveTo(p[0], p[1])));
+    const g = piece(new T.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), mats);
+    if (alongZ) { g.rotation.y = -Math.PI / 2; g.position.set(x + depth, y, z); } else g.position.set(x, y, z);
+    return g;
+  }
   // 立著的紙片：底邊貼在書頁上
   function sheet(tex, w, h, opts) {
     const o = opts || {};
     const geo = new T.PlaneGeometry(w, h);
     geo.translate(0, h / 2, 0);
-    const mat = new T.MeshLambertMaterial({ map: tex, side: T.DoubleSide, alphaTest: o.ghost ? 0.05 : 0.5, transparent: !!o.ghost, opacity: o.ghost ? 0.66 : 1, depthWrite: !o.ghost });
-    const mesh = new T.Mesh(geo, mat);
-    if (!o.ghost && o.shadow !== false) {
+    const mesh = new T.Mesh(geo, new T.MeshLambertMaterial({ map: tex, side: T.DoubleSide, alphaTest: 0.5 }));
+    if (o.shadow !== false) {
       mesh.castShadow = true;
       mesh.customDepthMaterial = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: tex, alphaTest: 0.5 });
     }
@@ -87,7 +147,7 @@
   // 登記一個會在打開時立起來的東西。type：hinge 從平躺翻起、grow 往上長、scale 放大、fx 由每一幀自己處理
   function pop(obj, x, z, opts) {
     const o = opts || {};
-    (o.root ? scene : x < 0 ? left : right).add(obj);
+    (x < 0 ? left : right).add(o.holder || obj);
     const p = { obj, z, type: o.type || 'hinge', extra: o.extra || 0, delay: 0, e: 1 };
     pops.push(p);
     return p;
@@ -97,9 +157,15 @@
     p.e = e;
     if (p.type === 'fx') return;
     p.obj.visible = e > 0;
-    if (p.type === 'hinge') p.obj.rotation.x = -Math.PI / 2 + (Math.PI / 2 + TILT) * e;
+    if (p.type === 'hinge') p.obj.rotation.x = (-Math.PI / 2) * (1 - e);
     else if (p.type === 'grow') p.obj.scale.y = Math.max(0.001, e);
     else p.obj.scale.setScalar(Math.max(0.001, e));
+  }
+  // 立在書頁上、永遠轉向鏡頭的紙片（樹、路人）
+  function stand(tex, w, h, x, z, opts) {
+    const holder = new T.Group(), m = sheet(tex, w, h, opts);
+    holder.position.set(x, 0, z); holder.add(m); turning.push(holder);
+    return pop(m, x, z, Object.assign({ holder }, opts));
   }
 
   // ---------- 書頁：地面上的東西都印在這張紙上 ----------
@@ -115,67 +181,84 @@
       const xs = pts.map((p) => p.x), zs = pts.map((p) => p.z);
       return { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
     };
+    const edge = () => { ctx.strokeStyle = C.ink; ctx.lineWidth = 0.32 * k; ctx.stroke(); };
+    // 躺在地上的大字，帶一點厚度
+    const letters = (text, x, z, size, angle, color) => {
+      ctx.save(); ctx.translate(px(x), py(z)); ctx.rotate(angle || 0);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 ' + size * k + 'px ' + FONT;
+      ctx.fillStyle = P.mix(color || C.brick, C.ink, 0.45); ctx.fillText(text, size * 0.07 * k, size * 0.07 * k);
+      ctx.fillStyle = color || C.brick; ctx.fillText(text, 0, 0);
+      ctx.restore();
+    };
+    const spaced = (s) => s.split('').join(' ');
     ctx.setLineDash([]); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
 
-    // 校外顏色深一點、畫斜線；校內是乾淨的紙
-    ctx.fillStyle = land.boundary ? '#e9dcc0' : C.paper; ctx.fillRect(0, 0, W, H);
+    // 底：場域外是米白，場域內是淡綠，帶一道一道的寬條紋
+    ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
     if (land.boundary) {
-      ctx.strokeStyle = 'rgba(36,50,63,0.05)'; ctx.lineWidth = 2;
-      for (let x = -H; x < W; x += 22) { ctx.beginPath(); ctx.moveTo(x, H); ctx.lineTo(x + H, 0); ctx.stroke(); }
-      trace(land.boundary, true); ctx.fillStyle = '#f8f0de'; ctx.fill();
+      trace(land.boundary, true); ctx.fillStyle = C.park; ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      for (let z = 0; z < page.d; z += 12) ctx.fillRect(0, z * k, W, 6 * k);
+      ctx.restore();
     }
-    P.halftone(ctx, W, H, 0.045);
-    ctx.strokeStyle = 'rgba(63,143,138,0.13)'; ctx.lineWidth = 1.5;
-    for (let x = 40; x < page.w; x += 40) { ctx.beginPath(); ctx.moveTo(x * k, 0); ctx.lineTo(x * k, H); ctx.stroke(); }
-    for (let z = 40; z < page.d; z += 40) { ctx.beginPath(); ctx.moveTo(0, z * k); ctx.lineTo(W, z * k); ctx.stroke(); }
 
-    // 路：校外的馬路偏灰，校內的小路是土色
-    const ROAD = { foot: [2.2, '#e3c79b'], path: [4.4, '#e3c79b'], street: [7, '#d9ccb0'], road: [11, '#d2c4a6'] };
+    // 路：小路是米白色，大路是粉紅色，上面有一格一格的橫條
+    const ROAD = { foot: [2.2, '#f8f3e6', null], path: [4.4, '#f8f3e6', 'rgba(179,199,174,0.6)'], street: [7, C.street, '#fbe7e2'], road: [11, C.street, '#fbe7e2'] };
     Object.keys(ROAD).forEach((kind) => {
       const list = land.roads.filter((r) => r.kind === kind), w = ROAD[kind][0];
-      ctx.strokeStyle = 'rgba(36,50,63,0.17)'; ctx.lineWidth = (w + 1.5) * k;
+      ctx.lineCap = 'round'; ctx.strokeStyle = ROAD[kind][1]; ctx.lineWidth = w * k;
       list.forEach((r) => { trace(r.pts); ctx.stroke(); });
-      ctx.strokeStyle = ROAD[kind][1]; ctx.lineWidth = w * k;
+      if (!ROAD[kind][2]) return;
+      ctx.lineCap = 'butt'; ctx.strokeStyle = ROAD[kind][2]; ctx.setLineDash([2.4 * k, 2.4 * k]);
       list.forEach((r) => { trace(r.pts); ctx.stroke(); });
+      ctx.setLineDash([]);
     });
+    ctx.lineCap = 'round';
 
     // 草地球場：外圍一圈紅土跑道
     land.fields.forEach((f) => {
       trace(f.pts, true);
-      ctx.strokeStyle = '#cf8a5e'; ctx.lineWidth = 12 * k; ctx.stroke();
-      ctx.strokeStyle = C.card; ctx.lineWidth = 6.8 * k; ctx.stroke();
-      ctx.strokeStyle = '#cf8a5e'; ctx.lineWidth = 5.6 * k; ctx.stroke();
-      ctx.fillStyle = '#a9c99a'; ctx.fill();
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 12.6 * k; ctx.stroke();
+      ctx.strokeStyle = '#e58a6a'; ctx.lineWidth = 12 * k; ctx.stroke();
+      ctx.strokeStyle = C.card; ctx.lineWidth = 6.6 * k; ctx.stroke();
+      ctx.strokeStyle = '#e58a6a'; ctx.lineWidth = 5.6 * k; ctx.stroke();
+      ctx.fillStyle = '#8fb190'; ctx.fill();
       ctx.save(); ctx.clip();
-      P.halftone(ctx, W, H, 0.06);
       const b = box(f.pts), cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
-      ctx.strokeStyle = 'rgba(255,250,240,0.85)'; ctx.lineWidth = 0.8 * k;
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      for (let x = b.x0; x < b.x1; x += 14) ctx.fillRect(px(x), py(b.z0), 7 * k, (b.z1 - b.z0) * k);
+      ctx.strokeStyle = 'rgba(255,253,246,0.9)'; ctx.lineWidth = 0.8 * k;
       ctx.strokeRect(px(b.x0 + 5), py(b.z0 + 5), (b.x1 - b.x0 - 10) * k, (b.z1 - b.z0 - 10) * k);
       ctx.beginPath(); ctx.moveTo(px(cx), py(b.z0 + 5)); ctx.lineTo(px(cx), py(b.z1 - 5)); ctx.stroke();
       ctx.beginPath(); ctx.arc(px(cx), py(cz), 9 * k, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
+      trace(f.pts, true); edge();
     });
-    // 硬地球場：土色
+    // 硬地球場：奶油黃
     land.courts.forEach((f) => {
-      trace(f.pts, true); ctx.fillStyle = '#d9a070'; ctx.fill();
+      trace(f.pts, true); ctx.fillStyle = C.butter; ctx.fill();
       ctx.save(); ctx.clip();
       const b = box(f.pts);
-      ctx.strokeStyle = 'rgba(255,250,240,0.85)'; ctx.lineWidth = 0.6 * k;
+      ctx.strokeStyle = 'rgba(255,253,246,0.95)'; ctx.lineWidth = 0.6 * k;
       ctx.strokeRect(px(b.x0 + 2), py(b.z0 + 2), (b.x1 - b.x0 - 4) * k, (b.z1 - b.z0 - 4) * k);
       ctx.beginPath(); ctx.moveTo(px(b.x0 + 2), py((b.z0 + b.z1) / 2)); ctx.lineTo(px(b.x1 - 2), py((b.z0 + b.z1) / 2)); ctx.stroke();
       ctx.restore();
+      trace(f.pts, true); edge();
     });
 
     // 水：水池與水路
-    land.ponds.forEach((w) => {
-      trace(w.pts, true); ctx.fillStyle = C.water; ctx.fill();
-      ctx.strokeStyle = '#4f93a8'; ctx.lineWidth = 1.4 * k; ctx.stroke();
-    });
-    ctx.strokeStyle = '#4f93a8'; ctx.lineWidth = 12 * k; land.water.forEach((w) => { trace(w.pts); ctx.stroke(); });
+    land.ponds.forEach((w) => { trace(w.pts, true); ctx.fillStyle = C.water; ctx.fill(); edge(); });
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 10.3 * k; land.water.forEach((w) => { trace(w.pts); ctx.stroke(); });
     ctx.strokeStyle = C.water; ctx.lineWidth = 9.6 * k; land.water.forEach((w) => { trace(w.pts); ctx.stroke(); });
-    ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.9 * k; ctx.setLineDash([5 * k, 8 * k]);
-    land.water.forEach((w) => { trace(w.pts); ctx.stroke(); });
-    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 0.8 * k; ctx.setLineDash([4 * k, 9 * k]);
+    [-2.4, 2.4].forEach((off) => {
+      ctx.save(); ctx.translate(0, off * k);
+      ctx.lineDashOffset = off > 0 ? 6 * k : 0;
+      land.water.forEach((w) => { trace(w.pts); ctx.stroke(); });
+      ctx.restore();
+    });
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
     // 每條有名字的水路標一次名字，放在書頁上最長的那一段旁邊
     const named = {};
     land.water.forEach((w) => {
@@ -186,44 +269,46 @@
         if (onPage(mid, 30) && (!named[w.name] || len > named[w.name].len)) named[w.name] = { len, mid };
       }
     });
-    ctx.textAlign = 'center'; ctx.font = '700 ' + 5.4 * k + 'px "Noto Sans TC", sans-serif';
-    Object.keys(named).forEach((name) => {
-      const m = named[name].mid;
-      ctx.lineWidth = 1.6 * k; ctx.strokeStyle = 'rgba(248,240,222,0.9)'; ctx.strokeText(name, px(m.x), py(m.z - 9));
-      ctx.fillStyle = '#2f6f84'; ctx.fillText(name, px(m.x), py(m.z - 9));
-    });
+    Object.keys(named).forEach((name) => { const m = named[name].mid; letters(spaced(name), m.x, m.z - 11, 6, 0, '#3f7f93'); });
 
-    // 校區邊界
+    // 場域邊界
     if (land.boundary) {
       trace(land.boundary, true);
-      ctx.strokeStyle = 'rgba(217,83,59,0.55)'; ctx.lineWidth = 0.9 * k; ctx.setLineDash([4 * k, 3.4 * k]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 0.5 * k; ctx.setLineDash([3 * k, 2.4 * k]); ctx.stroke(); ctx.setLineDash([]);
     }
 
     // 建築的位置
     feats.forEach((f) => {
       trace(f.ring, true);
-      if (f.featured) {
-        ctx.fillStyle = visited[f.id] ? 'rgba(36,50,63,0.14)' : 'rgba(36,50,63,0.07)'; ctx.fill();
-      } else {
-        // 沒有資料的建築：虛線輪廓
-        ctx.fillStyle = 'rgba(36,50,63,0.05)'; ctx.fill();
-        ctx.setLineDash([9, 7]); ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(36,50,63,0.42)'; ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(36,50,63,0.5)'; ctx.font = '500 ' + 4.6 * k + 'px "Noto Sans TC", sans-serif';
-        ctx.textAlign = 'center'; ctx.fillText('尚無紀錄', px(f.c.x), py(f.c.z) + 6);
-      }
+      if (f.featured) { ctx.fillStyle = 'rgba(58,51,64,0.1)'; ctx.fill(); edge(); return; }
+      // 沒有資料的建築：虛線輪廓
+      ctx.fillStyle = 'rgba(255,253,246,0.6)'; ctx.fill();
+      ctx.setLineDash([1.8 * k, 1.4 * k]); ctx.lineWidth = 0.4 * k; ctx.strokeStyle = C.ink; ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(58,51,64,0.6)'; ctx.font = '500 ' + 4.6 * k + 'px ' + FONT;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText('尚無紀錄', px(f.c.x), py(f.c.z) + 6);
     });
 
+    // 下方留白處：躺在地上的場域名稱
+    const en = (site.name && site.name.en) || '';
+    if (en && page.pad[2] > 40) {
+      const text = spaced(en.toUpperCase());
+      let size = Math.min(page.pad[2] * 0.2, 24);
+      ctx.font = '900 ' + size * k + 'px ' + FONT;
+      const tw = ctx.measureText(text).width / k;
+      if (tw > page.w * 0.84) size *= (page.w * 0.84) / tw;
+      letters(text, 0, page.d / 2 - page.pad[2] * 0.5, size);
+    }
+
     // 摺線
-    const fold = ctx.createLinearGradient(W / 2 - 70, 0, W / 2 + 70, 0);
-    fold.addColorStop(0, 'rgba(36,50,63,0)'); fold.addColorStop(0.5, 'rgba(36,50,63,0.22)'); fold.addColorStop(1, 'rgba(36,50,63,0)');
-    ctx.fillStyle = fold; ctx.fillRect(W / 2 - 70, 0, 140, H);
+    const fold = ctx.createLinearGradient(W / 2 - 14, 0, W / 2 + 14, 0);
+    fold.addColorStop(0, 'rgba(58,51,64,0)'); fold.addColorStop(0.5, 'rgba(58,51,64,0.2)'); fold.addColorStop(1, 'rgba(58,51,64,0)');
+    ctx.fillStyle = fold; ctx.fillRect(W / 2 - 14, 0, 28, H);
 
     // 指北針：放在左上角
     const cx = 40 * k, cy = 38 * k, n = { x: -SIN, z: -COS };
-    ctx.fillStyle = 'rgba(248,240,222,0.85)'; ctx.beginPath(); ctx.arc(cx, cy, 24 * k, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = C.coral; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(cx, cy, 20 * k, 0, Math.PI * 2); ctx.stroke();
-    ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx - n.x * 10 * k, cy - n.z * 10 * k); ctx.lineTo(cx + n.x * 15 * k, cy + n.z * 15 * k); ctx.stroke();
-    ctx.fillStyle = C.coral; ctx.font = '500 ' + 9 * k + 'px "DM Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = C.card; ctx.beginPath(); ctx.arc(cx, cy, 20 * k, 0, Math.PI * 2); ctx.fill(); edge();
+    ctx.strokeStyle = C.brick; ctx.lineWidth = 1.4 * k; ctx.beginPath(); ctx.moveTo(cx - n.x * 10 * k, cy - n.z * 10 * k); ctx.lineTo(cx + n.x * 14 * k, cy + n.z * 14 * k); ctx.stroke();
+    ctx.fillStyle = C.brick; ctx.font = '500 ' + 9 * k + 'px "DM Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillText('N', cx + n.x * 8 * k + 9 * k, cy + n.z * 8 * k + 3 * k);
   }
 
@@ -233,17 +318,17 @@
     ctx.setLineDash([]);
     ctx.drawImage(staticCanvas, 0, 0);
     if (track.length > 1) {
-      const line = (dx, dy) => {
+      const line = () => {
         ctx.beginPath();
         track.forEach((t, i) => {
-          const p = fromLngLat([t[1], t[0]]), x = (p.x + page.w / 2) * k + dx, y = (p.z + page.d / 2) * k + dy;
+          const p = fromLngLat([t[1], t[0]]), x = (p.x + page.w / 2) * k, y = (p.z + page.d / 2) * k;
           if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
         });
         ctx.stroke();
       };
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      ctx.strokeStyle = 'rgba(36,50,63,0.2)'; ctx.lineWidth = 1.8 * k; line(3, 4);
-      ctx.setLineDash([5.5 * k, 4.5 * k]); ctx.strokeStyle = C.coral; ctx.lineWidth = 1.3 * k; line(0, 0);
+      ctx.strokeStyle = C.card; ctx.lineWidth = 2.4 * k; line();
+      ctx.setLineDash([5.5 * k, 4.5 * k]); ctx.strokeStyle = C.thread; ctx.lineWidth = 1.3 * k; line();
       ctx.setLineDash([]);
     }
     pageTex.needsUpdate = true;
@@ -251,13 +336,11 @@
 
   // ---------- 場景 ----------
   function buildBook() {
-    // 桌面
-    const tc = P.makeCanvas(256, 256), tx = tc.getContext('2d');
-    tx.fillStyle = C.table; tx.fillRect(0, 0, 256, 256);
-    tx.strokeStyle = 'rgba(255,255,255,0.13)'; tx.lineWidth = 3; tx.lineCap = 'round';
-    [[30, 40, 44, 46], [150, 30, 158, 44], [200, 120, 214, 114], [70, 150, 78, 164], [120, 220, 134, 226], [226, 210, 232, 196], [20, 230, 34, 224], [110, 96, 116, 84]]
-      .forEach((s) => { tx.beginPath(); tx.moveTo(s[0], s[1]); tx.lineTo(s[2], s[3]); tx.stroke(); });
-    const tt = texture(tc); tt.wrapS = tt.wrapT = T.RepeatWrapping; tt.repeat.set(40, 40);
+    // 桌面：一道一道的寬條紋
+    const tc = P.makeCanvas(64, 64), tx = tc.getContext('2d');
+    tx.fillStyle = C.table; tx.fillRect(0, 0, 64, 64);
+    tx.fillStyle = 'rgba(255,255,255,0.13)'; tx.fillRect(0, 0, 64, 32);
+    const tt = texture(tc); tt.wrapS = tt.wrapT = T.RepeatWrapping; tt.repeat.set(140, 140);
     const table = new T.Mesh(new T.PlaneGeometry(4000, 4000), new T.MeshLambertMaterial({ map: tt }));
     table.rotation.x = -Math.PI / 2; table.position.y = -9.4; table.receiveShadow = true; scene.add(table);
 
@@ -268,7 +351,7 @@
     pageCanvas = P.makeCanvas(staticCanvas.width, staticCanvas.height);
     pageTex = texture(pageCanvas);
     const pageMat = new T.MeshLambertMaterial({ map: pageTex });
-    const coverMat = new T.MeshLambertMaterial({ color: 0xb8442f }), blockMat = new T.MeshLambertMaterial({ color: 0xdccdae });
+    const coverMat = flatMat(C.brick), blockMat = flatMat('#ebe3cf');
     const hw = page.w / 2;
     // 左右各一半：書頁、紙的厚度、封面
     page.halves = [-1, 1].map((side) => {
@@ -277,10 +360,10 @@
       for (let i = 0; i < uv.count; i++) uv.setX(i, side < 0 ? uv.getX(i) * 0.5 : 0.5 + uv.getX(i) * 0.5);
       const m = new T.Mesh(geo, pageMat);
       m.rotation.x = -Math.PI / 2; m.position.x = (side * hw) / 2; m.receiveShadow = true; g.add(m);
-      const block = new T.Mesh(new T.BoxGeometry(hw, 6, page.d), blockMat);
-      block.position.set((side * hw) / 2, -3.05, 0); block.receiveShadow = true; g.add(block);
-      const cover = new T.Mesh(new T.BoxGeometry(hw + 11, 3, page.d + 22), coverMat);
-      cover.position.set(side * (hw / 2 + 5.5), -7.55, 0); cover.castShadow = true; cover.receiveShadow = true; g.add(cover);
+      const block = piece(new T.BoxGeometry(hw, 6, page.d), blockMat);
+      block.position.set((side * hw) / 2, -3.05, 0); g.add(block);
+      const cover = piece(new T.BoxGeometry(hw + 11, 3, page.d + 22), coverMat);
+      cover.position.set(side * (hw / 2 + 5.5), -7.55, 0); g.add(cover);
       return m;
     });
     // 封面：書合起來時朝上，印著書名
@@ -289,85 +372,48 @@
     face.position.set(hw / 2 + 5.5, -9.08, 0);
     face.quaternion.setFromAxisAngle(new T.Vector3(0, 0, 1), Math.PI).multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), -Math.PI / 2));
     right.add(face);
-    const spine = new T.Mesh(new T.BoxGeometry(5, 9, page.d + 22), coverMat);
+    const spine = piece(new T.BoxGeometry(5, 9, page.d + 22), coverMat);
     spine.position.y = -4.6; scene.add(spine);
   }
   const coverTexture = () => texture(P.cover(document.title || '', App.t(site.name), page.w / 2 + 11, page.d + 22));
 
-  // 書後方一層一層的紙雕背景：山丘、太陽、雲
-  function buildBackdrop() {
-    const back = -page.d / 2, w = page.w + 30;
-    const sun = sheet(texture(P.sun()), 96, 96);
-    sun.position.set(page.w * 0.2, 34, back - 16); pop(sun, 0, back - 16, { root: true, type: 'scale', extra: 0.2 });
-    [['#5b7fa6', 96, 0.2, 0.6, -10, 0.16], [C.teal, 72, 0.17, 2.4, -4, 0.2], [C.leaf, 44, 0.13, 4.4, 2, 0.16]].forEach((h) => {
-      const m = sheet(texture(P.hills(h[0], w, h[1], h[2], h[3], h[5])), w, h[1]);
-      m.position.set(0, 0, back + h[4]); pop(m, 0, back + h[4], { root: true });
-    });
-    const cloudTex = texture(P.cloud());
-    [[-0.34, 104, -6, 62], [0.02, 122, -13, 78], [0.38, 96, -2, 54], [-0.12, 78, 8, 40]].forEach((c) => {
-      const pole = new T.Mesh(new T.BoxGeometry(0.9, c[1], 0.9).translate(0, c[1] / 2, 0), new T.MeshLambertMaterial({ color: 0xc9a877 }));
-      pole.position.set(page.w * c[0], 0, back + c[2] - 0.6); pop(pole, 0, back + c[2], { root: true, type: 'grow', extra: 0.1 });
-      const m = sheet(cloudTex, c[3], c[3] / 2);
-      m.position.set(page.w * c[0], c[1], back + c[2]); pop(m, 0, back + c[2], { root: true, type: 'scale', extra: 0.3 });
-    });
-  }
-
-  // 水邊立著一排水波
-  function buildWater() {
-    const tex = texture(P.wave());
-    land.water.forEach((w) => {
-      let carry = 9;
-      for (let i = 1; i < w.pts.length; i++) {
-        const a = w.pts[i - 1], b = w.pts[i], len = Math.hypot(b.x - a.x, b.z - a.z);
-        while (carry < len) {
-          const f = carry / len, p = { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f };
-          if (onPage(p, 10)) { const m = sheet(tex, 15, 5.4, { shadow: false }); m.position.set(p.x, 0, p.z + 1.5); pop(m, p.x, p.z); }
-          carry += 21;
-        }
-        carry -= len;
-      }
-    });
-  }
-
   function buildTrees() {
     const tex = {};
-    ['round', 'round2', 'pine', 'bush'].forEach((kind) => { tex[kind] = texture(P.tree(kind)); });
+    ['dark', 'pale', 'gold', 'bush'].forEach((kind) => { tex[kind] = texture(P.tree(kind)); });
     const placed = [];
-    const put = (p, kind, size) => {
-      const m = sheet(tex[kind], size * 0.7, size);
-      m.position.set(p.x, 0, p.z); pop(m, p.x, p.z); placed.push(p);
-    };
+    const put = (p, kind, size) => { stand(tex[kind], size * 0.7, size, p.x, p.z); placed.push(p); };
     // 真實資料：行道樹與單株的樹
     land.treeRows.forEach((row) => {
       for (let i = 1; i < row.length; i++) {
         const a = row[i - 1], b = row[i], n = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.z - a.z) / 8));
-        for (let j = i === 1 ? 0 : 1; j <= n; j++) put({ x: a.x + ((b.x - a.x) * j) / n, z: a.z + ((b.z - a.z) * j) / n }, 'round2', 13);
+        for (let j = i === 1 ? 0 : 1; j <= n; j++) put({ x: a.x + ((b.x - a.x) * j) / n, z: a.z + ((b.z - a.z) * j) / n }, 'dark', 13);
       }
     });
-    land.trees.forEach((p) => { if (onPage(p, 8)) put(p, 'round', 14); });
+    land.trees.forEach((p) => { if (onPage(p, 8)) put(p, 'pale', 14); });
     (site.landmarks || []).forEach((l) => { placed.push(fromLngLat([l.lng, l.lat])); });
 
-    // 裝飾：把空地種滿樹，避開建築、路、水、球場和書脊；校內密、校外疏
+    // 裝飾：把空地種滿樹，避開建築、路、水、球場和書脊；場域內密、場域外疏
     const ROADW = { foot: 1.1, path: 2.2, street: 3.5, road: 5.5 };
     let seed = 11;
     const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
     const free = (p) => {
       if (Math.abs(p.x) < 5 || !onPage(p, 12)) return false;
+      if (p.z > page.d / 2 - page.pad[2] * 0.75 && page.pad[2] > 40) return false;               // 留給地上的大字
       if (feats.some((f) => inside(p, f.ring) || lineDist(p, f.ring, true) < 6)) return false;
       if (land.fields.concat(land.courts, land.ponds).some((f) => inside(p, f.pts) || lineDist(p, f.pts, true) < 8)) return false;
-      if (land.roads.some((r) => lineDist(p, r.pts) < ROADW[r.kind] + 3.6)) return false;
+      if (land.roads.some((r) => lineDist(p, r.pts) < (ROADW[r.kind] || 2) + 3.6)) return false;
       if (land.water.some((w) => lineDist(p, w.pts) < 10)) return false;
-      return !placed.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 9.5);
+      return !placed.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 9);
     };
     let inCampus = 0, outside = 0;
-    for (let i = 0; i < 1400 && inCampus + outside < 78; i++) {
+    for (let i = 0; i < 2000 && inCampus + outside < 110; i++) {
       const p = { x: (rnd() - 0.5) * page.w, z: (rnd() - 0.5) * page.d }, r = rnd(), s = rnd();
       const campus = !land.boundary || inside(p, land.boundary);
-      if (campus ? inCampus >= 60 : outside >= 18) continue;
+      if (campus ? inCampus >= 86 : outside >= 24) continue;
       if (!free(p)) continue;
-      if (r < 0.42) put(p, 'round', 12 + s * 5);
-      else if (r < 0.72) put(p, 'round2', 12 + s * 5);
-      else if (r < 0.9) put(p, 'pine', 14 + s * 5);
+      if (r < 0.45) put(p, 'dark', 12 + s * 5);
+      else if (r < 0.74) put(p, 'pale', 12 + s * 5);
+      else if (r < 0.9) put(p, 'gold', 11 + s * 4);
       else put(p, 'bush', 6.5 + s * 2);
       if (campus) inCampus++; else outside++;
     }
@@ -375,10 +421,28 @@
     (site.landmarks || []).forEach((l) => {
       const p = fromLngLat([l.lng, l.lat]);
       if (!onPage(p, 8)) return;
-      const m = sheet(tex.round, 14.7, 21);
-      m.position.set(p.x, 0, p.z);
-      addSign(App.t(l.name), '', p.x, 19, p.z - 1, pop(m, p.x, p.z), true, true);
+      addSign(App.t(l.name), '', p.x, 19, p.z, stand(tex.gold, 14.7, 21, p.x, p.z), true, true);
     });
+  }
+
+  // 路上的小人：只是裝飾，隨機站在場域內的小路上
+  function buildPeople() {
+    const n = site.page && site.page.people != null ? site.page.people : 26;
+    const paths = land.roads.filter((r) => r.kind !== 'road' && r.pts.length > 1);
+    if (!n || !paths.length) return;
+    const tex = [0, 1, 2, 3, 4, 5].map((i) => texture(P.passerby(i)));
+    let seed = 29, made = 0;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (let i = 0; i < n * 40 && made < n; i++) {
+      const r = paths[Math.floor(rnd() * paths.length)], j = 1 + Math.floor(rnd() * (r.pts.length - 1)), t = rnd();
+      const a = r.pts[j - 1], b = r.pts[j];
+      const p = { x: a.x + (b.x - a.x) * t + (rnd() - 0.5) * 2, z: a.z + (b.z - a.z) * t + (rnd() - 0.5) * 2 };
+      if (Math.abs(p.x) < 4 || !onPage(p, 8)) continue;
+      if (land.boundary && !inside(p, land.boundary)) continue;
+      if (feats.some((f) => inside(p, f.ring) || lineDist(p, f.ring, true) < 1.5)) continue;
+      stand(tex[made % 6], 2.9, 5.8, p.x, p.z, { shadow: false, type: 'scale', extra: 0.25 });
+      made++;
+    }
   }
 
   // 面向鏡頭的名牌
@@ -391,39 +455,72 @@
     return s;
   }
 
-  // 紙盒：把建築的外框往上拉成一個盒子。牆面貼著一格一格的窗，屋頂是一張色紙，摺邊是米白色。
-  // 未開拓時是半透明的描圖紙盒。
+  // 屋頂上的東西，放在外框裡最大的長方形上。spec.top：saw 鋸齒天窗、gable 斜屋頂、glass 溫室、garden 屋頂菜園，其餘是平屋頂
+  function roofTop(g, f) {
+    const r = f.flat, s = f.paper || {};
+    if (!r) return;
+    const y = f.bh, w = r.x1 - r.x0, d = r.z1 - r.z0, alongX = w >= d, long = Math.max(w, d), short = Math.min(w, d);
+    const white = flatMat(C.white);
+    // across：輪廓橫跨短邊、沿長邊拉長；along：輪廓沿著長邊、往短邊拉
+    const across = (pts, len, off, inset, mats) => g.add(alongX ? prism(pts, len, true, r.x0 + off, y, r.z0 + inset, mats) : prism(pts, len, false, r.x0 + inset, y, r.z0 + off, mats));
+    const along = (pts, mats) => g.add(prism(pts, short, !alongX, r.x0, y, r.z0, mats));
+    const block = (bw, bh, bd, x, z, color) => {
+      const b = piece(new T.BoxGeometry(bw, bh, bd).translate(0, bh / 2, 0), flatMat(color));
+      b.position.set(x, y, z); g.add(b);
+    };
+    const cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2;
+
+    if (s.top === 'saw') {
+      const n = Math.max(2, Math.round(long / 9)), t = long / n, h = 4.6, pts = [[0, 0], [0, h]];
+      for (let i = 1; i < n; i++) pts.push([i * t, 0.7], [i * t, h]);
+      pts.push([long, 0.7], [long, 0]);
+      along(pts, [white, white]);
+    } else if (s.top === 'gable') {
+      const h = Math.min(9, short * 0.3);
+      across([[0, 0], [short, 0], [short / 2, h]], long, 0, 0, [flatMat(P.mix(s.color || C.sage, '#ffffff', 0.25)), flatMat(s.roofTop || C.salmon)]);
+    } else if (s.top === 'glass') {
+      const sw = Math.min(short * 0.62, 10), len = long * 0.56;
+      across([[0, 0], [sw, 0], [sw, 2.6], [sw / 2, 2.6 + sw * 0.34], [0, 2.6]], len, (long - len) / 2, (short - sw) / 2, [white, white]);
+    } else if (s.top === 'garden') {
+      const nx = Math.max(1, Math.min(5, Math.floor(w / 7))), nz = Math.max(1, Math.min(4, Math.floor(d / 6)));
+      const tone = [C.leafDark, C.leaf, C.gold, C.leafDark, C.sage];
+      for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
+        if ((i * 3 + j) % 4 === 3) continue;                                     // 留幾格空著
+        block(w / nx - 2.4, 0.9, d / nz - 2.4, r.x0 + (w * (i + 0.5)) / nx, r.z0 + (d * (j + 0.5)) / nz, tone[(i + j * 2) % tone.length]);
+      }
+    } else {
+      if (short >= 9) block(7, 4, 6, cx, cz, C.white);
+      if (long >= 26) block(3.4, 2, 3, cx + (alongX ? long * 0.3 : 0), cz + (alongX ? 0 : long * 0.3), C.grey);
+    }
+  }
+
+  // 建築：把外框往上拉成一個量體。牆面貼著一格一格的窗，屋頂是比牆淺的同色，每條邊描一圈細線。
+  // 未開拓時是還沒上色的白模型。
   function buildingBox(f, open) {
-    const g = new T.Group();
+    const g = new T.Group(), s = f.paper || {};
     const shape = new T.Shape();
     f.ring.forEach((p, i) => (i ? shape.lineTo(p.x, -p.z) : shape.moveTo(p.x, -p.z)));
-    // 牆面貼圖沿著每一面牆的長度排，每面牆剛好放整數個開間；太短的牆不放窗
+    // 牆面貼圖沿著每一面牆的長度排，每面牆剛好放整數個開間；太短的牆只取立面最邊緣的牆色
     const uv = {
       generateTopUV: (g0, v, a, b, c) => [a, b, c].map((i) => new T.Vector2(v[i * 3], v[i * 3 + 1])),
       generateSideWallUV: (g0, v, a, b, c, d) => {
-        const n = Math.round(Math.hypot(v[b * 3] - v[a * 3], v[b * 3 + 1] - v[a * 3 + 1]) / 7), u = n ? n * 7 : 0.5;
-        return [new T.Vector2(0, 1 - v[a * 3 + 2]), new T.Vector2(u, 1 - v[b * 3 + 2]), new T.Vector2(u, 1 - v[c * 3 + 2]), new T.Vector2(0, 1 - v[d * 3 + 2])];
+        const n = Math.round(Math.hypot(v[b * 3] - v[a * 3], v[b * 3 + 1] - v[a * 3 + 1]) / 7), u = n ? n * 7 : 0.3;
+        return [new T.Vector2(0, v[a * 3 + 2]), new T.Vector2(u, v[b * 3 + 2]), new T.Vector2(u, v[c * 3 + 2]), new T.Vector2(0, v[d * 3 + 2])];
       },
     };
     const geo = new T.ExtrudeGeometry(shape, { depth: f.bh, bevelEnabled: false, UVGenerator: uv });
     let mats;
     if (open) {
-      const wall = texture(P.wallTile(f.paper)); wall.wrapS = wall.wrapT = T.RepeatWrapping; wall.repeat.set(1 / 7, -f.levels / f.bh);
-      const roof = texture(P.roofTile(f.paper)); roof.wrapS = roof.wrapT = T.RepeatWrapping; roof.repeat.set(1 / 9, 1 / 9);
-      mats = [new T.MeshLambertMaterial({ map: roof }), new T.MeshLambertMaterial({ map: wall })];
+      const wall = texture(P.facade(s, f.levels)); wall.wrapS = wall.wrapT = T.RepeatWrapping; wall.repeat.set(1 / 7, 1 / f.bh);
+      mats = [flatMat(s.roof || P.mix(s.color || C.sage, '#ffffff', 0.42)), new T.MeshLambertMaterial({ map: wall, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })];
     } else {
-      const ghost = new T.MeshLambertMaterial({ color: 0xe2f0f4, transparent: true, opacity: 0.5, depthWrite: false });
-      mats = [ghost, ghost];
+      const blank = flatMat(C.white);
+      mats = [blank, blank];
     }
-    const box = new T.Mesh(geo, mats);
-    box.rotation.x = -Math.PI / 2; box.castShadow = open; box.receiveShadow = open;
+    const box = piece(geo, mats);
+    box.rotation.x = -Math.PI / 2;
     g.add(box);
-    const edges = new T.LineSegments(new T.EdgesGeometry(geo, 30), new T.LineBasicMaterial({ color: open ? 0xfffaf0 : 0xffffff }));
-    edges.rotation.x = -Math.PI / 2; g.add(edges);
-    if (open && inside(f.c, f.ring) && f.sw > 30) {                                // 屋頂上的小盒子
-      const hut = new T.Mesh(new T.BoxGeometry(7, 4.5, 6), new T.MeshLambertMaterial({ color: 0xfffaf0 }));
-      hut.position.set(f.c.x, f.bh + 2.25, f.c.z); hut.castShadow = true; g.add(hut);
-    }
+    if (open) roofTop(g, f);
     return g;
   }
   function buildBuildings() {
@@ -431,7 +528,7 @@
       const open = !!visited[f.id];
       const p = pop(buildingBox(f, open), f.c.x, f.c.z, { type: 'grow' });
       const sign = addSign(f.name, f.en, f.c.x, f.bh + 2, f.c.z, p, open, false);
-      const stamp = addSign('未開拓', '', f.c.x, f.bh * 0.5, f.c.z + 1, p, !open, true);
+      const stamp = addSign('未開拓', '', f.c.x, f.bh + 1, f.c.z, p, !open, true);
       sheets[f.id] = { f, pop: p, sign, stamp };
     });
   }
@@ -446,13 +543,14 @@
     };
     player = sheet(poses.idle, 12.2, 22);
     scene.add(player);
-    // 紙底座：像紙娃娃的立牌，邊緣縫一圈紅線
+    // 腳下的圓牌
     const c = P.makeCanvas(160, 160), ctx = c.getContext('2d');
-    ctx.fillStyle = C.card; ctx.beginPath(); ctx.arc(80, 80, 80, 0, Math.PI * 2); ctx.fill();
-    ctx.setLineDash([13, 9]); ctx.lineWidth = 5; ctx.strokeStyle = C.coral; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(80, 80, 62, 0, Math.PI * 2); ctx.stroke();
-    base = new T.Mesh(new T.CircleGeometry(7, 40), new T.MeshLambertMaterial({ map: texture(c) }));
-    base.rotation.x = -Math.PI / 2; base.position.y = 0.3; base.receiveShadow = true;
+    ctx.fillStyle = C.card; ctx.beginPath(); ctx.arc(80, 80, 76, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = C.ink; ctx.stroke();
+    ctx.setLineDash([13, 9]); ctx.lineWidth = 6; ctx.strokeStyle = C.thread; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(80, 80, 58, 0, Math.PI * 2); ctx.stroke();
+    base = new T.Mesh(new T.CircleGeometry(7, 40), new T.MeshLambertMaterial({ map: texture(c), transparent: true }));
+    base.rotation.x = -Math.PI / 2; base.position.y = 0.3;
     scene.add(base);
     playerPop = { obj: player, z: 0, type: 'fx', extra: 0.45, delay: 0, e: 1 };
     pops.push(playerPop);
@@ -480,24 +578,27 @@
     return Math.hypot(me.vx, me.vz);
   }
 
-  // ---------- 鏡頭 ----------
+  // ---------- 鏡頭：平行投影，沒有近大遠小 ----------
   function resize() {
     const w = canvas.clientWidth || 148, h = canvas.clientHeight || 148;
     renderer.setSize(w, h, false);
-    camera.aspect = w / h; camera.updateProjectionMatrix();
-    const half = Math.tan((camera.fov * Math.PI) / 360);
-    fitDist = Math.max((page.w * 0.56) / (half * camera.aspect), (page.d * 0.72) / half);
+    aspect = w / h;
+    const c = Math.abs(Math.cos(AZ0)), s = Math.abs(Math.sin(AZ0));
+    const wide = page.w * c + page.d * s, tall = (page.w * s + page.d * c) * Math.sin(EL0) + 70;
+    fitDist = Math.max((wide * 0.54) / aspect, tall * 0.56) / ZOOM;
   }
-  // 「我附近」的鏡頭距離：大約看得到半本書
-  const nearDist = () => Math.max(230, fitDist * 0.5);
+  // 「我附近」的鏡頭距離
+  const nearDist = () => Math.max(230, fitDist * 0.42);
 
   function placeCamera() {
-    const ce = Math.cos(view.el);
-    camera.position.set(view.tx + view.dist * Math.sin(view.az) * ce, view.dist * Math.sin(view.el), view.tz + view.dist * Math.cos(view.az) * ce);
+    const ce = Math.cos(view.el), R = 2200, half = view.dist * ZOOM;
+    camera.position.set(view.tx + R * Math.sin(view.az) * ce, 12 + R * Math.sin(view.el), view.tz + R * Math.cos(view.az) * ce);
     camera.lookAt(view.tx, 12, view.tz);
+    camera.left = -half * aspect; camera.right = half * aspect; camera.top = half; camera.bottom = -half;
+    camera.updateProjectionMatrix();
   }
 
-  // 打開：書先合著，封面翻開，紙片從後往前一樣一樣立起來，最後鏡頭推近到小人身邊
+  // 打開：書先合著，封面翻開，東西從後往前一樣一樣立起來，最後鏡頭推近到小人身邊
   function startIntro() {
     intro = { t0: performance.now(), cam: true };
     mode = 'book'; zoomTo = null;
@@ -509,8 +610,8 @@
     right.rotation.z = Math.PI * (1 - a);
     pops.forEach((p) => setPop(p, clamp01((t - p.delay) / POP_FOR)));
     if (intro.cam) {
-      view.az = 0; view.el = 1.02 + (0.72 - 1.02) * a; view.dist = fitDist * (0.7 + 0.3 * a);
-      view.tx = (-page.w / 4) * (1 - a); view.tz = page.d * 0.05;
+      view.az = AZ0; view.el = 0.95 + (EL0 - 0.95) * a; view.dist = fitDist * (0.7 + 0.3 * a);
+      view.tx = (-page.w / 4) * (1 - a); view.tz = 0;
       if (t > POP_AT + POP_SPREAD + 0.5) { intro.cam = false; mode = 'me'; zoomTo = nearDist(); }
     }
     if (t > POP_AT + POP_SPREAD + POP_FOR + 0.6) intro = null;
@@ -541,8 +642,8 @@
       p.x = e.clientX; p.y = e.clientY;
       if (ptrs.size === 1) {
         moved += Math.abs(dx) + Math.abs(dy);
-        view.az = Math.max(-1, Math.min(1, view.az - dx * 0.006));
-        view.el = Math.max(0.3, Math.min(1.3, view.el + dy * 0.005));
+        view.az = Math.max(AZ0 - 1.1, Math.min(AZ0 + 1.1, view.az - dx * 0.006));
+        view.el = Math.max(0.35, Math.min(1.25, view.el + dy * 0.005));
       } else if (ptrs.size === 2) {
         const q = [...ptrs.values()], d = Math.hypot(q[0].x - q[1].x, q[0].y - q[1].y);
         if (pinch) view.dist = Math.max(70, Math.min(fitDist * 1.4, (view.dist * pinch) / d));
@@ -557,7 +658,7 @@
       if (now - lastTap < 330) {
         mode = mode === 'me' ? 'book' : 'me';
         zoomTo = mode === 'book' ? fitDist : nearDist();
-        if (mode === 'book') view.az = 0;
+        if (mode === 'book') { view.az = AZ0; view.el = EL0; }
         lastTap = 0;
         return;
       }
@@ -606,7 +707,7 @@
       const pad = cfg.padding || [34, 34, 34, 34];                                // 上、右、下、左各留多少（公尺）
       const x0 = Math.min(...span.map((r) => r.x)) - pad[3], x1 = Math.max(...span.map((r) => r.x)) + pad[1];
       const y0 = Math.min(...span.map((r) => r.y)) - pad[2], y1 = Math.max(...span.map((r) => r.y)) + pad[0];
-      page = { w: x1 - x0, d: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+      page = { w: x1 - x0, d: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, pad };
 
       feats = list.map((b) => {
         const ring = b.ring.slice(0, -1).map(fromLngLat);
@@ -614,8 +715,8 @@
         return Object.assign({}, b, {
           ring,
           c: { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: ring.reduce((s, p) => s + p.z, 0) / ring.length },
-          sw: Math.max(...xs) - Math.min(...xs),
-          bh: Math.max(12, Math.min(46, b.h * 2)),                                // 紙盒高度，刻意誇張
+          flat: b.featured ? innerRect(ring) : null,
+          bh: Math.max(12, Math.min(46, b.h * 2)),                                // 量體高度，刻意誇張
           levels: Math.max(1, Math.round(b.h / 3.5)),
         });
       });
@@ -639,10 +740,12 @@
       renderer.shadowMap.type = T.PCFSoftShadowMap;
       scene = new T.Scene();
       scene.background = new T.Color(C.table);
-      camera = new T.PerspectiveCamera(34, 1, 5, 6000);
+      camera = new T.OrthographicCamera(-1, 1, 1, -1, 10, 6000);
+      inkLine = new T.LineBasicMaterial({ color: new T.Color(C.ink).convertSRGBToLinear() });
 
-      scene.add(new T.AmbientLight(0xffffff, 0.78));
-      const sun = new T.DirectionalLight(0xfff2dd, 0.42);
+      // 光很平：幾乎都是環境光，只留一點方向光分出明暗面與淡淡的影子
+      scene.add(new T.AmbientLight(0xffffff, 0.86));
+      const sun = new T.DirectionalLight(0xffffff, 0.24);
       sun.position.set(-page.w * 0.5, 330, page.d * 0.9);
       sun.castShadow = true;
       sun.shadow.mapSize.set(2048, 2048);
@@ -652,9 +755,8 @@
       scene.add(sun);
 
       buildBook();
-      buildBackdrop();
-      buildWater();
       buildTrees();
+      buildPeople();
       buildBuildings();
       buildPlayer();
       schedule();
@@ -694,21 +796,23 @@
       // 鏡頭
       if (intro) stepIntro(now);
       if (!isOpen) {
-        view.tx = me.x; view.tz = me.z; view.az = 0; view.el = 0.82; view.dist = 150;
+        view.tx = me.x; view.tz = me.z; view.az = AZ0; view.el = EL0; view.dist = 150;
       } else if (!(intro && intro.cam)) {
-        const tx = mode === 'me' ? me.x : 0, tz = mode === 'me' ? me.z : page.d * 0.05;
+        const tx = mode === 'me' ? me.x : 0, tz = mode === 'me' ? me.z : 0;
         view.tx += (tx - view.tx) * 0.12; view.tz += (tz - view.tz) * 0.12;
         if (zoomTo != null) { view.dist += (zoomTo - view.dist) * 0.07; if (Math.abs(zoomTo - view.dist) < 1.5) zoomTo = null; }
       }
       placeCamera();
 
-      // 名牌與小人永遠面向鏡頭；名牌離鏡頭越遠放得越大，維持可讀
+      // 樹與路人轉向鏡頭；名牌與小人正對鏡頭，名牌隨縮放調整大小，維持可讀
+      turning.forEach((g) => { g.rotation.y = view.az; });
+      const signScale = Math.max(0.25, Math.min(2.4, view.dist * 0.0018)) * Math.min(1, 0.5 + aspect * 0.5);   // 直式螢幕窄，名牌縮小一點
       signs.forEach((s) => {
         const e = s.userData.pop.e;
         s.visible = isOpen && s.userData.on && e > 0;
         if (!s.visible) return;
         s.quaternion.copy(camera.quaternion);
-        s.scale.setScalar(Math.max(0.25, Math.min(2.4, camera.position.distanceTo(s.position) * 0.0018)) * e);
+        s.scale.setScalar(signScale * e);
       });
       const pe = playerPop.e;
       player.visible = base.visible = pe > 0;
@@ -726,7 +830,7 @@
       if (renderer) compose();
     },
 
-    // 走近後，紙片從書頁上立起來
+    // 走近後，白模型換成上了色的建築，從書頁上長起來
     setVisited(map, newId) {
       visited = map;
       if (!renderer) return;
@@ -744,7 +848,6 @@
           return t < 1;
         });
       }
-      drawStatic(); compose();
     },
 
     setOpen(open) {
