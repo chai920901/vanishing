@@ -204,6 +204,26 @@
     return art;
   }
 
+  // ---------- 地圖上的故事卡 ----------
+  // 已獲得的：一張立著的小卡片
+  function storyCard(color) {
+    const c = makeCanvas(96, 150), ctx = c.getContext('2d'), k = kit(ctx, 5);
+    ctx.fillStyle = C.ink; ctx.fillRect(45, 100, 6, 48);
+    k.box(8, 6, 80, 100, 8); k.paper(color || C.butter);
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 5;
+    [34, 54, 74].forEach((y, i) => { ctx.beginPath(); ctx.moveTo(24, y); ctx.lineTo(i === 2 ? 52 : 72, y); ctx.stroke(); });
+    return c;
+  }
+  // 還沒獲得、但就在附近的：地上一圈提示，看不到內容
+  function storyHint() {
+    const c = makeCanvas(128, 128), ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(244,220,138,0.6)'; ctx.beginPath(); ctx.arc(64, 64, 58, 0, Math.PI * 2); ctx.fill();
+    ctx.setLineDash([14, 10]); ctx.lineWidth = 6; ctx.strokeStyle = C.brick; ctx.beginPath(); ctx.arc(64, 64, 54, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = C.brick; ctx.font = '900 64px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('?', 64, 68);
+    return c;
+  }
+
   // ---------- 封面 ----------
   // w、h 是封面的寬高比（公尺即可）
   function cover(title, subtitle, w, h) {
@@ -272,5 +292,5 @@
     return c;
   }
 
-  App.paper = { C, mix, makeCanvas, person, passerby, sign, tree, cover, facade };
+  App.paper = { C, mix, makeCanvas, person, passerby, sign, tree, storyCard, storyHint, cover, facade };
 })();

@@ -140,6 +140,7 @@
     if (i >= 0) cards[i] = draft; else cards.push(draft);
     if (!persist()) return toast('存不進去：瀏覽器的空間滿了或不允許儲存');
     refreshCount();
+    if (App.cards) App.cards.refresh(isNew ? draft.id : null);
     $('au-form').hidden = true;
     toast(photoFailed ? '文字已存，但照片存不進去' : '已放下「' + (draft.title || draft.text.slice(0, 8)) + '」');
   });
@@ -148,6 +149,7 @@
     cards = cards.filter((c) => c.id !== draft.id);
     await photoDel(draft.id);
     persist(); refreshCount();
+    if (App.cards) App.cards.refresh(null);
     $('au-form').hidden = true;
     toast('已刪除');
   });
@@ -215,5 +217,5 @@
 
   $('author').hidden = false;
   refreshCount();
-  App.author = { bundle, cards: () => cards };
+  App.author = { bundle, cards: () => cards, photo: photoGet };
 })();

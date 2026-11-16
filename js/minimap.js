@@ -8,11 +8,12 @@
   const FOLD_AT = 0.3, FOLD_FOR = 1.15, POP_AT = 1.25, POP_SPREAD = 1.0, POP_FOR = 0.6;   // 打開動畫的時間（秒）
   const FOLLOW = 2.4;                                                           // 小人跟隨定位的鬆緊：越大跟得越緊
   const FONT = '"Noto Sans TC", "PingFang TC", sans-serif';
+  const HINT = 60;                                                              // 離還沒獲得的故事卡多近，地圖上才出現提示（公尺）
 
   let T, renderer, scene, camera, canvas, site, origin, cosLat, COS = 1, SIN = 0, aspect = 1, inkLine;
   let page, staticCanvas, pageCanvas, pageTex, feats = [], land;
   let track = [], visited = {};
-  let left, right, pops = [], signs = [], turning = [], sheets = {}, anims = [];
+  let left, right, pops = [], signs = [], turning = [], sheets = {}, anims = [], cardMarks = [], cardTex = null;
   let player, playerPop, poses, base, facing = 1, stepPhase = 0;
   const me = { x: 0, z: 0, vx: 0, vz: 0, ready: false };                        // 小人實際顯示的位置與速度
   let isOpen = false, mode = 'me', fitDist = 400, intro = null, zoomTo = null;
@@ -165,7 +166,9 @@
   function stand(tex, w, h, x, z, opts) {
     const holder = new T.Group(), m = sheet(tex, w, h, opts);
     holder.position.set(x, 0, z); holder.add(m); turning.push(holder);
-    return pop(m, x, z, Object.assign({ holder }, opts));
+    const p = pop(m, x, z, Object.assign({ holder }, opts));
+    p.holder = holder;
+    return p;
   }
 
   // ---------- 書頁：地面上的東西都印在這張紙上 ----------
@@ -588,7 +591,7 @@
     fitDist = Math.max((wide * 0.54) / aspect, tall * 0.56) / ZOOM;
   }
   // 「我附近」的鏡頭距離
-  const nearDist = () => Math.max(230, fitDist * 0.42);
+  const nearDist = () => Math.max(230, Math.min(340, fitDist * 0.42));          // 直式螢幕的全書距離很大，近景不要跟著拉遠
 
   function placeCamera() {
     const ce = Math.cos(view.el), R = 2200, half = view.dist * ZOOM;
@@ -806,6 +809,13 @@
 
       // 樹與路人轉向鏡頭；名牌與小人正對鏡頭，名牌隨縮放調整大小，維持可讀
       turning.forEach((g) => { g.rotation.y = view.az; });
+      // 故事卡：已獲得的立著一張小卡片；還沒獲得的，走到附近地上才出現一圈提示
+      const beat = Math.sin(now / 320);
+      cardMarks.forEach((m) => {
+        m.holder.visible = m.got;
+        m.ring.visible = !m.got && Math.hypot(m.p.x - me.x, m.p.z - me.z) < HINT;
+        if (m.ring.visible) { m.ring.scale.setScalar(1 + 0.16 * beat); m.ring.material.opacity = 0.62 + 0.3 * beat; }
+      });
       const signScale = Math.max(0.25, Math.min(2.4, view.dist * 0.0018)) * Math.min(1, 0.5 + aspect * 0.5);   // 直式螢幕窄，名牌縮小一點
       signs.forEach((s) => {
         const e = s.userData.pop.e;
@@ -823,6 +833,24 @@
 
       anims = anims.filter((a) => a(now));
       renderer.render(scene, camera);
+    },
+
+    // list：[{ id, lat, lng, got }]。卡片有增減或剛獲得時，整批重建
+    setCards(list) {
+      if (!renderer) return;
+      cardMarks.forEach((m) => {
+        m.ring.parent.remove(m.ring); m.holder.parent.remove(m.holder);
+        pops = pops.filter((p) => p !== m.pop); turning = turning.filter((g) => g !== m.holder);
+      });
+      if (!cardTex) cardTex = { card: texture(P.storyCard()), memory: texture(P.storyCard(C.lilac)), hint: texture(P.storyHint()) };   // 參觀者的記憶卡是紫色
+      cardMarks = list.map((c) => ({ c, p: fromLngLat([c.lng, c.lat]) })).filter((m) => onPage(m.p, 4)).map((m) => {
+        const ring = new T.Mesh(new T.CircleGeometry(5.5, 32), new T.MeshBasicMaterial({ map: cardTex.hint, transparent: true, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2; ring.position.set(m.p.x, 0.4, m.p.z);
+        (m.p.x < 0 ? left : right).add(ring);
+        const p = stand(m.c.memory ? cardTex.memory : cardTex.card, 4.6, 7.2, m.p.x, m.p.z, { shadow: false, type: 'scale' });
+        if (!intro) setPop(p, 1);
+        return { p: m.p, got: m.c.got, ring, pop: p, holder: p.holder };
+      });
     },
 
     setTrack(t) {

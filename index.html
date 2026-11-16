@@ -52,6 +52,9 @@
     </div>
     <div id="avg"><span>校區</span><b id="avg-num">—</b></div>
 
+    <button id="book-btn">故事冊 <b id="book-count">0</b></button>
+    <button id="mem-btn" hidden>＋ 留下一段記憶</button>
+
     <div id="simpanel" hidden>
       <button data-k="q">⟲</button><button data-k="w">▲</button><button data-k="e">⟳</button>
       <button data-k="a">◀</button><button data-k="s">▼</button><button data-k="d">▶</button>
@@ -65,10 +68,10 @@
     </div>
     <p id="au-toast" hidden></p>
 
-    <div id="au-form" class="au-sheet" hidden>
+    <div id="au-form" class="panel" hidden>
       <div class="log-head">
         <h2 id="au-form-title">在這裡放卡</h2>
-        <button id="au-form-close" class="au-x" aria-label="關閉">✕</button>
+        <button id="au-form-close" class="panel-x" aria-label="關閉">✕</button>
       </div>
       <p id="au-where"></p>
       <p id="au-poor" hidden>定位誤差偏大。站到空曠一點的地方等幾秒，再按下面的按鈕重抓。</p>
@@ -90,10 +93,10 @@
       <button id="au-delete" class="au-ghost au-danger" hidden>刪除這張卡</button>
     </div>
 
-    <div id="au-cards" class="au-sheet" hidden>
+    <div id="au-cards" class="panel" hidden>
       <div class="log-head">
         <h2>已放的卡片</h2>
-        <button id="au-cards-close" class="au-x" aria-label="關閉">✕</button>
+        <button id="au-cards-close" class="panel-x" aria-label="關閉">✕</button>
       </div>
       <p id="au-none">還沒有卡片。走到想放的地方，按「在這裡放卡」。</p>
       <ol id="au-items"></ol>
@@ -103,6 +106,44 @@
         <button id="au-copy" class="au-ghost">複製文字</button>
       </div>
       <p class="log-foot">卡片只存在這支手機的這個瀏覽器裡，不會上傳。清除瀏覽資料或換瀏覽器就會不見，離開前記得先匯出。</p>
+    </div>
+
+    <!-- 故事卡：走進半徑時出現 -->
+    <div id="card" class="panel" hidden>
+      <div class="log-head">
+        <div>
+          <p class="eyebrow" id="card-tag"></p>
+          <h2 id="card-title"></h2>
+        </div>
+        <button id="card-close" class="panel-x" aria-label="關閉">✕</button>
+      </div>
+      <img id="card-photo" alt="" hidden>
+      <p id="card-text"></p>
+      <p class="log-foot" id="card-meta"></p>
+    </div>
+
+    <!-- 記憶卡：參觀者留下的話，場域包有設定 memory 才會開放 -->
+    <div id="mem-form" class="panel" hidden>
+      <div class="log-head">
+        <h2>留下一段記憶</h2>
+        <button id="mem-close" class="panel-x" aria-label="關閉">✕</button>
+      </div>
+      <p id="mem-where"></p>
+      <label>標題（可以不寫）<input id="mem-title" type="text" autocomplete="off"></label>
+      <label>想留在這裡的話<textarea id="mem-text" rows="5"></textarea></label>
+      <p id="mem-note">送出後，這段話和你現在站的位置會立刻公開，所有走到這裡的人都會看到，而且你沒辦法自己收回。請不要寫下任何人的姓名、電話或其他個人資料。</p>
+      <button id="mem-send" class="au-main">送出</button>
+    </div>
+
+    <!-- 故事冊：只列出已獲得的卡 -->
+    <div id="book" class="panel" hidden>
+      <div class="log-head">
+        <h2>故事冊</h2>
+        <button id="book-close" class="panel-x" aria-label="關閉">✕</button>
+      </div>
+      <p id="book-none">還沒有故事。在這裡走走，有些角落留著話。</p>
+      <ol id="book-items"></ol>
+      <p class="log-foot">故事不會改變血條。它們只是留在這裡。</p>
     </div>
 
     <!-- 傷害紀錄 -->
@@ -127,10 +168,13 @@
   <script src="sites/nanda/footprints.js"></script>
   <script src="sites/nanda/terrain.js"></script>
   <script src="sites/nanda/site.js"></script>
+  <script src="sites/nanda/cards.js"></script>
   <script src="js/core.js"></script>
   <script src="js/paper.js"></script>
   <script src="js/minimap.js"></script>
   <script src="js/app.js"></script>
   <script src="js/author.js"></script>
+  <script src="js/memory.js"></script>
+  <script src="js/cards.js"></script>
 </body>
 </html>
