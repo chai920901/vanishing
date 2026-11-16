@@ -11,9 +11,10 @@
 
   const params = new URLSearchParams(location.search);
   const SIM = params.has('sim');
+  const AUTHOR = params.has('author');   // 作者模式：放卡用，見 author.js
 
   const state = {
-    pos: null,        // { lat, lng }
+    pos: null,        // { lat, lng, acc }，acc 是定位誤差（公尺），模擬定位時沒有
     heading: 0,       // 感測器給的朝向
     smooth: 0,        // 平滑後的朝向，畫面用這個
     inField: false,
@@ -89,11 +90,12 @@
       // iOS 需要使用者點擊後才能請求方向感測
       if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) {
         const r = await DeviceOrientationEvent.requestPermission();
-        if (r !== 'granted') return fail('需要方向感測，才知道你面對哪一棟建築。請在瀏覽器設定中允許後重新整理。');
+        if (r !== 'granted' && !AUTHOR) return fail('需要方向感測，才知道你面對哪一棟建築。請在瀏覽器設定中允許後重新整理。');
       }
       listenOrientation();
     } catch (e) {
-      return fail('無法取得方向感測。');
+      // 作者模式下，方向感測或相機拿不到也讓人進去，放卡只需要定位
+      if (!AUTHOR) return fail('無法取得方向感測。');
     }
 
     if (!navigator.mediaDevices || !navigator.geolocation) {
@@ -103,11 +105,11 @@
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
       $('cam').srcObject = stream;
     } catch (e) {
-      return fail('需要相機，建築才會出現在畫面裡。請允許相機後重新整理。');
+      if (!AUTHOR) return fail('需要相機，建築才會出現在畫面裡。請允許相機後重新整理。');
     }
 
     navigator.geolocation.watchPosition(
-      (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
       () => fail('需要位置，才知道你站在哪裡。位置只在你的手機上使用，不會上傳。'),
       { enableHighAccuracy: true, maximumAge: 2000 }
     );
@@ -130,7 +132,7 @@
   function setPos(p) {
     state.pos = p;
     const d = geo.dist(p, site.center);
-    state.inField = SIM || d <= site.radius;
+    state.inField = SIM || AUTHOR || d <= site.radius;   // 作者模式不受場域範圍限制
     if (state.inField) {
       show('stage');
       if (!state.running) run();
@@ -161,7 +163,10 @@
       if (k === 'q' || k === 'arrowleft') state.heading = (state.heading - turn + 360) % 360;
       if (k === 'e' || k === 'arrowright') state.heading = (state.heading + turn) % 360;
     };
-    window.addEventListener('keydown', (e) => act(e.key.toLowerCase()));
+    window.addEventListener('keydown', (e) => {
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;          // 正在打字時不要移動
+      act(e.key.toLowerCase());
+    });
     $('simpanel').addEventListener('click', (e) => { if (e.target.dataset.k) act(e.target.dataset.k); });
     // 地圖展開時，點地圖直接移動到那個位置
     // 地圖展開時點一下書頁，模擬的使用者會走過去

@@ -58,6 +58,53 @@
     </div>
     <p id="credit">地圖資料 © OpenStreetMap</p>
 
+    <!-- 作者模式：網址加上 ?author=1 才會出現，用來在現場放故事卡 -->
+    <div id="author" hidden>
+      <button id="au-add">＋ 在這裡放卡</button>
+      <button id="au-list">已放的卡片 <b id="au-count">0</b></button>
+    </div>
+    <p id="au-toast" hidden></p>
+
+    <div id="au-form" class="au-sheet" hidden>
+      <div class="log-head">
+        <h2 id="au-form-title">在這裡放卡</h2>
+        <button id="au-form-close" class="au-x" aria-label="關閉">✕</button>
+      </div>
+      <p id="au-where"></p>
+      <p id="au-poor" hidden>定位誤差偏大。站到空曠一點的地方等幾秒，再按下面的按鈕重抓。</p>
+      <button id="au-move" class="au-ghost">重新抓位置</button>
+      <label>標題<input id="au-title" type="text" maxlength="40" autocomplete="off"></label>
+      <label>內容<textarea id="au-text" rows="5"></textarea></label>
+      <label>走到多近會拿到
+        <select id="au-radius">
+          <option value="8">8 公尺</option>
+          <option value="15">15 公尺</option>
+          <option value="25">25 公尺</option>
+          <option value="40">40 公尺</option>
+        </select>
+      </label>
+      <label>照片（可以不放）<input id="au-photo" type="file" accept="image/*"></label>
+      <img id="au-preview" alt="" hidden>
+      <button id="au-photo-clear" class="au-ghost" hidden>拿掉照片</button>
+      <button id="au-save" class="au-main">存起來</button>
+      <button id="au-delete" class="au-ghost au-danger" hidden>刪除這張卡</button>
+    </div>
+
+    <div id="au-cards" class="au-sheet" hidden>
+      <div class="log-head">
+        <h2>已放的卡片</h2>
+        <button id="au-cards-close" class="au-x" aria-label="關閉">✕</button>
+      </div>
+      <p id="au-none">還沒有卡片。走到想放的地方，按「在這裡放卡」。</p>
+      <ol id="au-items"></ol>
+      <div class="au-export">
+        <button id="au-share" class="au-main">分享檔案</button>
+        <button id="au-download" class="au-ghost">下載檔案</button>
+        <button id="au-copy" class="au-ghost">複製文字</button>
+      </div>
+      <p class="log-foot">卡片只存在這支手機的這個瀏覽器裡，不會上傳。清除瀏覽資料或換瀏覽器就會不見，離開前記得先匯出。</p>
+    </div>
+
     <!-- 傷害紀錄 -->
     <div id="log" hidden>
       <div class="log-head">
@@ -84,5 +131,6 @@
   <script src="js/paper.js"></script>
   <script src="js/minimap.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/author.js"></script>
 </body>
 </html>
